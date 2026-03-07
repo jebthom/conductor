@@ -1,5 +1,5 @@
 import { AnthropicProvider, type LLMProvider } from "./llm";
-import { KokoroTTSProvider, type TTSProvider } from "./tts";
+import { KokoroSidecarProvider, type TTSProvider } from "./tts";
 
 export type { LLMProvider, TTSProvider };
 
@@ -13,6 +13,6 @@ export function getLLM(): LLMProvider {
 }
 
 export function getTTS(): TTSProvider {
-  if (!tts) tts = new KokoroTTSProvider();
+  if (!tts) tts = new KokoroSidecarProvider();
   return tts;
 }

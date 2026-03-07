@@ -50,5 +50,8 @@ next-env.d.ts
 .DS_Store
 Thumbs.db
 
+# Python venv
+/.venv/
+
 # Kokoro model cache
 /models/
