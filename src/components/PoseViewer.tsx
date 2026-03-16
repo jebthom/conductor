@@ -36,7 +36,9 @@ export default function PoseViewer() {
       });
       if (cancelled) return;
 
-      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
       if (cancelled) {
         stream.getTracks().forEach((t) => t.stop());
         return;
@@ -65,15 +67,80 @@ export default function PoseViewer() {
 
         const result = landmarker.detectForVideo(video, performance.now());
 
+        // MediaPipe Pose hand landmarks: 19 = left index finger, 20 = right index finger
+        const MIDDLE_HAND_INDICES = new Set([19, 20]);
+
+        // Collect finger pixel positions for hit-testing
+        const fingerPositions: { x: number; y: number }[] = [];
+        for (const landmarks of result.landmarks) {
+          for (const idx of MIDDLE_HAND_INDICES) {
+            const lm = landmarks[idx];
+            if (lm) {
+              fingerPositions.push({ x: lm.x * canvas.width, y: lm.y * canvas.height });
+            }
+          }
+        }
+
+        // Draw target shapes (canvas is flipped: visual left = high x, visual right = low x)
+        const boxSize = 180;
+        const boxX = (5 / 7) * canvas.width - boxSize / 2;  // visual 2/7 from left
+        const boxY = canvas.height / 2 - boxSize / 2;
+        const boxHit = fingerPositions.some(
+          (p) => p.x >= boxX && p.x <= boxX + boxSize && p.y >= boxY && p.y <= boxY + boxSize
+        );
+        if (boxHit) {
+          ctx.fillStyle = "rgba(0, 255, 255, 0.4)";
+          ctx.fillRect(boxX, boxY, boxSize, boxSize);
+        }
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(boxX, boxY, boxSize, boxSize);
+
+        const circleX = (2 / 7) * canvas.width;  // visual 2/7 from right
+        const circleY = canvas.height / 2;
+        const circleR = 90;
+        const circleHit = fingerPositions.some(
+          (p) => Math.hypot(p.x - circleX, p.y - circleY) <= circleR
+        );
+        ctx.beginPath();
+        ctx.arc(circleX, circleY, circleR, 0, Math.PI * 2);
+        if (circleHit) {
+          ctx.fillStyle = "rgba(0, 255, 255, 0.4)";
+          ctx.fill();
+        }
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
         const drawingUtils = new DrawingUtils(ctx);
         for (const landmarks of result.landmarks) {
-          drawingUtils.drawLandmarks(landmarks, {
-            radius: 3,
-            color: "#00FF00",
-          });
+          // Draw connectors first (skeleton lines)
           drawingUtils.drawConnectors(landmarks, POSE_CONNECTIONS, {
             color: "#00FFFF",
             lineWidth: 2,
+          });
+
+          // Draw landmarks individually for per-joint styling
+          landmarks.forEach((lm, i) => {
+            const isMiddleHand = MIDDLE_HAND_INDICES.has(i);
+            drawingUtils.drawLandmarks([lm], {
+              radius: isMiddleHand ? 9 : 3,
+              color: isMiddleHand ? "#FF0000" : "#00FFFF",
+            });
+
+            if (isMiddleHand) {
+              const px = Math.round(lm.x * canvas.width);
+              const py = Math.round(lm.y * canvas.height);
+              const tx = lm.x * canvas.width;
+              const ty = lm.y * canvas.height;
+              ctx.save();
+              ctx.translate(tx, ty);
+              ctx.scale(-1, 1);
+              ctx.font = "20px monospace";
+              ctx.fillStyle = "#FFFFFF";
+              ctx.fillText(`(${px}, ${py})`, 14, 4);
+              ctx.restore();
+            }
           });
         }
 
@@ -94,10 +161,10 @@ export default function PoseViewer() {
   }, []);
 
   return (
-    <div className="relative inline-block">
+    <div className="relative w-full h-full">
       <video
         ref={videoRef}
-        className="block -scale-x-100"
+        className="w-full h-full object-cover -scale-x-100 grayscale"
         playsInline
         muted
       />
@@ -105,6 +172,7 @@ export default function PoseViewer() {
         ref={canvasRef}
         className="absolute top-0 left-0 w-full h-full -scale-x-100"
       />
+      <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-2/3 h-[100px] border border-white/50 rounded" />
     </div>
   );
 }

@@ -68,10 +68,15 @@ export default function Home() {
   }, [conduct]);
 
   return (
-    <main className="flex flex-col items-center gap-4 p-4">
-      <h1 className="text-2xl font-bold">Conductor</h1>
-      <PoseViewer />
-      <p className="text-lg font-mono">{status}</p>
+    <main className="h-screen w-screen flex items-center justify-center bg-black">
+      <div className="aspect-[4/3] max-w-[1280px] max-h-full w-full flex flex-col">
+        <div className="h-3/4">
+          <PoseViewer />
+        </div>
+        <div className="h-1/4 flex items-center justify-center px-4">
+          <p className="text-lg font-mono text-white text-center">{status}</p>
+        </div>
+      </div>
     </main>
   );
 }

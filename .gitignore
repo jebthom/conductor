@@ -55,3 +55,6 @@ Thumbs.db
 
 # Kokoro model cache
 /models/
+
+# Claude Code
+CLAUDE.md
