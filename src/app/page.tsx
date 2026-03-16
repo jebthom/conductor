@@ -1,57 +1,59 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useConductor } from "@/lib/conductor/useConductor";
-import type { Approach, Affect, Character } from "@/lib/conductor/types";
+import type { Approach, Affect } from "@/lib/conductor/types";
 
 const PoseViewer = dynamic(() => import("@/components/PoseViewer"), {
   ssr: false,
 });
 
-const APPROACHES: Approach[] = ["approach", "neutral", "avoid"];
-const AFFECTS: Affect[] = ["happy", "sad", "angry"];
-
-function randomPick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function makeTouchHandler(
-  character: Character,
-  handleSelectionUpdate: (c: Character, a: Approach, af: Affect) => void,
-  intervalRef: React.RefObject<ReturnType<typeof setInterval> | null>
-) {
-  return (touching: boolean) => {
-    if (touching) {
-      const approach = randomPick(APPROACHES);
-      const affect = randomPick(AFFECTS);
-      handleSelectionUpdate(character, approach, affect);
-      intervalRef.current = setInterval(() => {
-        handleSelectionUpdate(character, approach, affect);
-      }, 100);
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
-  };
-}
-
 export default function Home() {
-  const { state, start, handleSelectionUpdate } = useConductor();
-  const boxInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-  const circleInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { state, start, handleCharacterSelect, handleApproachUpdate, handleAffectUpdate, handleInstantApproach, handleInstantAffect } = useConductor();
 
-  const onBoxTouch = useCallback(
-    makeTouchHandler("A", handleSelectionUpdate, boxInterval),
-    [handleSelectionUpdate]
+  const onCharacterSelect = useCallback(
+    (character: "A" | "B") => handleCharacterSelect(character),
+    [handleCharacterSelect]
   );
 
-  const onCircleTouch = useCallback(
-    makeTouchHandler("B", handleSelectionUpdate, circleInterval),
-    [handleSelectionUpdate]
+  const onApproachHover = useCallback(
+    (approach: Approach | null) => {
+      if (approach) handleApproachUpdate(approach);
+    },
+    [handleApproachUpdate]
   );
+
+  const onAffectHover = useCallback(
+    (affect: Affect | null) => {
+      if (affect) handleAffectUpdate(affect);
+    },
+    [handleAffectUpdate]
+  );
+
+  // ── Keyboard controls (dev) ──────────────────────────────────────────────
+
+  useEffect(() => {
+    const APPROACH_KEYS: Record<string, Approach> = { w: "approach", s: "neutral", x: "avoid" };
+    const AFFECT_KEYS: Record<string, Affect> = { ArrowUp: "happy", ArrowLeft: "sad", ArrowRight: "angry" };
+    const CHAR_KEYS: Record<string, "A" | "B"> = { q: "A", e: "B" };
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.repeat) return;
+
+      const char = CHAR_KEYS[e.key];
+      if (char) { handleCharacterSelect(char); return; }
+
+      const approach = APPROACH_KEYS[e.key];
+      if (approach) { handleInstantApproach(approach); return; }
+
+      const affect = AFFECT_KEYS[e.key];
+      if (affect) { handleInstantAffect(affect); return; }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleCharacterSelect, handleInstantApproach, handleInstantAffect]);
 
   const phaseLabel = (() => {
     switch (state.phase) {
@@ -76,9 +78,15 @@ export default function Home() {
 
   return (
     <main className="h-screen w-screen flex items-center justify-center bg-black">
-      <div className="aspect-[4/3] max-w-[1280px] max-h-full w-full flex flex-col">
+      <div className="aspect-[4/3] max-h-full max-w-full flex flex-col">
         <div className="h-3/4">
-          <PoseViewer onBoxTouch={onBoxTouch} onCircleTouch={onCircleTouch} />
+          <PoseViewer
+            onCharacterSelect={onCharacterSelect}
+            onApproachHover={onApproachHover}
+            onAffectHover={onAffectHover}
+            playbackEndTime={state.playbackEndTime}
+            characterNames={state.sceneConfig ? { A: state.sceneConfig.characters.A.name, B: state.sceneConfig.characters.B.name } : null}
+          />
         </div>
         <div className="h-1/4 flex flex-col items-center justify-center px-4 gap-2">
           {state.phase === "idle" ? (
@@ -93,14 +101,14 @@ export default function Home() {
               <p className="text-sm font-mono text-white/60">{phaseLabel}</p>
               {state.currentLine && state.speakingCharacter && (
                 <p className="text-lg font-mono text-white text-center">
-                  {state.speakingCharacter}: &quot;{state.currentLine}&quot;
+                  {state.sceneConfig?.characters[state.speakingCharacter]?.name ?? state.speakingCharacter}: &quot;{state.currentLine}&quot;
                 </p>
               )}
               <div className="flex gap-4 text-xs font-mono text-white/40">
                 <span>
                   char:{" "}
-                  <span className={sel.confirmedCharacter ? "text-cyan-400" : ""}>
-                    {sel.confirmedCharacter ?? sel.hoveredCharacter ?? "—"}
+                  <span className={state.activeCharacter ? "text-cyan-400" : ""}>
+                    {state.activeCharacter ?? "—"}
                   </span>
                 </span>
                 <span>

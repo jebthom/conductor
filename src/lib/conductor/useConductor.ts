@@ -9,23 +9,25 @@ import type {
   Character,
   Candidates,
   Phase,
+  SceneConfig,
 } from "./types";
-import { SCENE_DESCRIPTION } from "./scene";
-
-const VOICE_MAP: Record<Character, string> = {
-  A: "af_heart",   // female
-  B: "am_michael", // male
-};
+import { createScene } from "./scene";
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 
 type Action =
+  | { type: "SCENE_CREATED"; sceneConfig: SceneConfig }
   | { type: "SCENE_AUDIO_READY"; audioBuffer: AudioBuffer }
   | { type: "CANDIDATES_READY"; candidatesA: Candidates; candidatesB: Candidates }
   | { type: "NARRATION_ENDED" }
-  | { type: "SELECTION_UPDATE"; character: Character; approach: Approach; affect: Affect }
+  | { type: "CHARACTER_SELECT"; character: Character }
+  | { type: "APPROACH_UPDATE"; approach: Approach }
+  | { type: "AFFECT_UPDATE"; affect: Affect }
+  | { type: "INSTANT_APPROACH"; approach: Approach }
+  | { type: "INSTANT_AFFECT"; affect: Affect }
   | { type: "LOCK_IN" }
-  | { type: "TTS_READY"; audioBuffer: AudioBuffer; line: string; character: Character }
+  | { type: "TTS_READY"; audioBuffer: AudioBuffer }
+  | { type: "PLAY_PENDING" }
   | { type: "ENTER_WAITING" }
   | { type: "SET_PHASE"; phase: Phase }
   | { type: "NARRATION_STARTED"; startTime: number; duration: number };
@@ -33,29 +35,33 @@ type Action =
 // ── Initial state ────────────────────────────────────────────────────────────
 
 const initialSelection: SelectionState = {
-  hoveredCharacter: null,
   hoveredApproach: null,
   hoveredAffect: null,
-  characterHeldSince: null,
   approachHeldSince: null,
   affectHeldSince: null,
-  confirmedCharacter: null,
   confirmedApproach: null,
   confirmedAffect: null,
 };
 
 const initialState: ConductorState = {
   phase: "idle",
-  scene: SCENE_DESCRIPTION,
+  sceneConfig: null,
+  turnNumber: 1,
   history: [],
   audioBuffer: null,
   candidatesA: null,
   candidatesB: null,
+  activeCharacter: null,
   selection: initialSelection,
   currentLine: null,
   speakingCharacter: null,
+  pendingLine: null,
+  pendingCharacter: null,
+  pendingAudio: null,
+  playbackEndedAt: null,
   narrationStartTime: null,
   narrationDuration: null,
+  playbackEndTime: null,
 };
 
 // ── Reducer ──────────────────────────────────────────────────────────────────
@@ -64,6 +70,9 @@ function reducer(state: ConductorState, action: Action): ConductorState {
   switch (action.type) {
     case "SET_PHASE":
       return { ...state, phase: action.phase };
+
+    case "SCENE_CREATED":
+      return { ...state, sceneConfig: action.sceneConfig };
 
     case "SCENE_AUDIO_READY":
       return {
@@ -84,28 +93,24 @@ function reducer(state: ConductorState, action: Action): ConductorState {
         ...state,
         narrationStartTime: action.startTime,
         narrationDuration: action.duration,
+        playbackEndTime: Date.now() + action.duration * 1000,
       };
 
     case "NARRATION_ENDED":
-      return { ...state, phase: "waiting" };
+      if (state.phase === "locked") {
+        // Old audio finished while preparing next line — record end time, stay locked
+        return { ...state, playbackEndedAt: Date.now(), playbackEndTime: null };
+      }
+      return { ...state, phase: "waiting", playbackEndTime: null, playbackEndedAt: Date.now() };
 
-    case "SELECTION_UPDATE": {
+    case "CHARACTER_SELECT":
+      return { ...state, activeCharacter: action.character };
+
+    case "APPROACH_UPDATE": {
       const now = Date.now();
       const prev = state.selection;
-      let { hoveredCharacter, characterHeldSince, confirmedCharacter } = prev;
       let { hoveredApproach, approachHeldSince, confirmedApproach } = prev;
-      let { hoveredAffect, affectHeldSince, confirmedAffect } = prev;
 
-      // Character axis
-      if (action.character !== hoveredCharacter) {
-        hoveredCharacter = action.character;
-        characterHeldSince = now;
-        confirmedCharacter = null;
-      } else if (characterHeldSince && now - characterHeldSince >= 1000) {
-        confirmedCharacter = hoveredCharacter;
-      }
-
-      // Approach axis
       if (action.approach !== hoveredApproach) {
         hoveredApproach = action.approach;
         approachHeldSince = now;
@@ -114,7 +119,17 @@ function reducer(state: ConductorState, action: Action): ConductorState {
         confirmedApproach = hoveredApproach;
       }
 
-      // Affect axis
+      return {
+        ...state,
+        selection: { ...prev, hoveredApproach, approachHeldSince, confirmedApproach },
+      };
+    }
+
+    case "AFFECT_UPDATE": {
+      const now = Date.now();
+      const prev = state.selection;
+      let { hoveredAffect, affectHeldSince, confirmedAffect } = prev;
+
       if (action.affect !== hoveredAffect) {
         hoveredAffect = action.affect;
         affectHeldSince = now;
@@ -125,35 +140,50 @@ function reducer(state: ConductorState, action: Action): ConductorState {
 
       return {
         ...state,
-        selection: {
-          hoveredCharacter,
-          hoveredApproach,
-          hoveredAffect,
-          characterHeldSince,
-          approachHeldSince,
-          affectHeldSince,
-          confirmedCharacter,
-          confirmedApproach,
-          confirmedAffect,
-        },
+        selection: { ...prev, hoveredAffect, affectHeldSince, confirmedAffect },
       };
     }
 
+    case "INSTANT_APPROACH":
+      return {
+        ...state,
+        selection: {
+          ...state.selection,
+          hoveredApproach: action.approach,
+          confirmedApproach: action.approach,
+        },
+      };
+
+    case "INSTANT_AFFECT":
+      return {
+        ...state,
+        selection: {
+          ...state.selection,
+          hoveredAffect: action.affect,
+          confirmedAffect: action.affect,
+        },
+      };
+
     case "LOCK_IN": {
-      const { confirmedCharacter, confirmedApproach, confirmedAffect } = state.selection;
-      if (!confirmedCharacter || !confirmedApproach || !confirmedAffect) {
+      const { activeCharacter, sceneConfig } = state;
+      const { confirmedApproach, confirmedAffect } = state.selection;
+      if (!activeCharacter || !confirmedApproach || !confirmedAffect) {
         return state;
       }
-      const candidates = confirmedCharacter === "A" ? state.candidatesA : state.candidatesB;
+      const candidates = activeCharacter === "A" ? state.candidatesA : state.candidatesB;
       if (!candidates) return state;
 
       const line = candidates[confirmedApproach][confirmedAffect];
+      const charName = sceneConfig?.characters[activeCharacter]?.name ?? activeCharacter;
       return {
         ...state,
         phase: "locked",
-        currentLine: line,
-        speakingCharacter: confirmedCharacter,
-        history: [...state.history, `${confirmedCharacter}: ${line}`],
+        pendingLine: line,
+        pendingCharacter: activeCharacter,
+        pendingAudio: null,
+        // Keep currentLine/speakingCharacter — caption shows what's playing
+        history: [...state.history, `${charName}: ${line}`],
+        turnNumber: state.turnNumber + 1,
         candidatesA: null,
         candidatesB: null,
         selection: initialSelection,
@@ -161,13 +191,19 @@ function reducer(state: ConductorState, action: Action): ConductorState {
     }
 
     case "TTS_READY":
+      return { ...state, pendingAudio: action.audioBuffer };
+
+    case "PLAY_PENDING":
       return {
         ...state,
         phase: "narrating",
-        audioBuffer: action.audioBuffer,
-        currentLine: action.line,
-        speakingCharacter: action.character,
-        selection: initialSelection,
+        audioBuffer: state.pendingAudio,
+        currentLine: state.pendingLine,
+        speakingCharacter: state.pendingCharacter,
+        pendingAudio: null,
+        pendingLine: null,
+        pendingCharacter: null,
+        playbackEndedAt: null,
       };
 
     case "ENTER_WAITING":
@@ -218,17 +254,16 @@ export function useConductor() {
   }
 
   async function fetchAllCandidates(
-    history: string[]
+    scene: SceneConfig,
+    history: string[],
+    turnNumber: number
   ): Promise<{ candidatesA: Candidates; candidatesB: Candidates }> {
-    console.log("[conductor] fetchCandidates start: both chars, history length", history.length);
+    console.log("[conductor] fetchCandidates start: both chars, history length", history.length, "turn", turnNumber);
     const t0 = performance.now();
     const res = await fetch("/api/generate-candidates", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sceneDescription: SCENE_DESCRIPTION,
-        history,
-      }),
+      body: JSON.stringify({ scene, history, turnNumber }),
     });
     if (!res.ok) {
       const body = await res.text();
@@ -262,17 +297,22 @@ export function useConductor() {
     console.log("[conductor] phase:", state.phase);
   }, [state.phase]);
 
-  const prevConfirmed = useRef({ char: state.selection.confirmedCharacter, app: state.selection.confirmedApproach, aff: state.selection.confirmedAffect });
+  useEffect(() => {
+    if (state.activeCharacter) {
+      console.log("[conductor] active character:", state.activeCharacter);
+    }
+  }, [state.activeCharacter]);
+
+  const prevConfirmed = useRef({ app: state.selection.confirmedApproach, aff: state.selection.confirmedAffect });
   useEffect(() => {
     const s = state.selection;
     const prev = prevConfirmed.current;
-    if (s.confirmedCharacter !== prev.char || s.confirmedApproach !== prev.app || s.confirmedAffect !== prev.aff) {
+    if (s.confirmedApproach !== prev.app || s.confirmedAffect !== prev.aff) {
       console.log("[conductor] selection confirmed:", {
-        character: s.confirmedCharacter,
         approach: s.confirmedApproach,
         affect: s.confirmedAffect,
       });
-      prevConfirmed.current = { char: s.confirmedCharacter, app: s.confirmedApproach, aff: s.confirmedAffect };
+      prevConfirmed.current = { app: s.confirmedApproach, aff: s.confirmedAffect };
     }
   }, [state.selection]);
 
@@ -286,34 +326,35 @@ export function useConductor() {
     const { phase } = state;
 
     if (phase === "init") {
-      fetchAudio(SCENE_DESCRIPTION).then((buf) => {
+      if (!state.sceneConfig) return;
+      fetchAudio(state.sceneConfig.narratedIntro).then((buf) => {
         dispatch({ type: "SCENE_AUDIO_READY", audioBuffer: buf });
       });
     }
 
     if (phase === "narrating-intro" && state.audioBuffer) {
+      if (!state.sceneConfig) return;
       // Play intro narration + fetch candidates for both characters in parallel
       playBuffer(state.audioBuffer, () => {
         dispatch({ type: "NARRATION_ENDED" });
       });
 
-      fetchAllCandidates(state.history).then(({ candidatesA, candidatesB }) => {
+      fetchAllCandidates(state.sceneConfig, state.history, state.turnNumber).then(({ candidatesA, candidatesB }) => {
         dispatch({ type: "CANDIDATES_READY", candidatesA, candidatesB });
       });
     }
 
     if (phase === "locked") {
-      if (!state.currentLine || !state.speakingCharacter) return;
-      const line = state.currentLine;
-      const character = state.speakingCharacter;
+      if (!state.pendingLine || !state.pendingCharacter || !state.sceneConfig) return;
+      const voice = state.sceneConfig.characters[state.pendingCharacter].voice;
 
-      // Fire TTS for selected line + fetch next candidates in parallel
-      Promise.all([
-        fetchAudio(line, VOICE_MAP[character]),
-        fetchAllCandidates(state.history),
-      ]).then(([audioBuf, { candidatesA, candidatesB }]) => {
+      // Fire TTS and candidate fetch independently
+      fetchAudio(state.pendingLine, voice).then((audioBuf) => {
+        dispatch({ type: "TTS_READY", audioBuffer: audioBuf });
+      });
+
+      fetchAllCandidates(state.sceneConfig, state.history, state.turnNumber).then(({ candidatesA, candidatesB }) => {
         dispatch({ type: "CANDIDATES_READY", candidatesA, candidatesB });
-        dispatch({ type: "TTS_READY", audioBuffer: audioBuf, line, character });
       });
     }
 
@@ -350,9 +391,10 @@ export function useConductor() {
       const remaining = s.narrationDuration - elapsed;
 
       if (remaining <= 1.0 && remaining > 0) {
-        const { confirmedCharacter, confirmedApproach, confirmedAffect } = s.selection;
-        const candidates = confirmedCharacter === "A" ? s.candidatesA : confirmedCharacter === "B" ? s.candidatesB : null;
-        if (candidates && confirmedCharacter && confirmedApproach && confirmedAffect) {
+        const { confirmedApproach, confirmedAffect } = s.selection;
+        const { activeCharacter } = s;
+        const candidates = activeCharacter === "A" ? s.candidatesA : activeCharacter === "B" ? s.candidatesB : null;
+        if (candidates && activeCharacter && confirmedApproach && confirmedAffect) {
           dispatch({ type: "LOCK_IN" });
           return;
         }
@@ -366,14 +408,29 @@ export function useConductor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.phase]);
 
+  // ── Pending playback: wait for TTS + 1s gap after old audio ─────────────
+
+  useEffect(() => {
+    if (state.phase !== "locked" || !state.pendingAudio || state.playbackEndedAt === null) return;
+
+    const elapsed = Date.now() - state.playbackEndedAt;
+    const remaining = Math.max(0, 1000 - elapsed);
+
+    const timer = setTimeout(() => {
+      dispatch({ type: "PLAY_PENDING" });
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [state.phase, state.pendingAudio, state.playbackEndedAt]);
+
   // ── Waiting phase: check for confirmation ────────────────────────────────
 
   useEffect(() => {
     if (state.phase !== "waiting") return;
 
-    const { confirmedCharacter, confirmedApproach, confirmedAffect } = state.selection;
-    const candidates = confirmedCharacter === "A" ? state.candidatesA : confirmedCharacter === "B" ? state.candidatesB : null;
-    if (candidates && confirmedCharacter && confirmedApproach && confirmedAffect) {
+    const { confirmedApproach, confirmedAffect } = state.selection;
+    const { activeCharacter } = state;
+    const candidates = activeCharacter === "A" ? state.candidatesA : activeCharacter === "B" ? state.candidatesB : null;
+    if (candidates && activeCharacter && confirmedApproach && confirmedAffect) {
       dispatch({ type: "LOCK_IN" });
     }
   }, [state.phase, state.selection, state.candidatesA, state.candidatesB]);
@@ -382,15 +439,45 @@ export function useConductor() {
 
   const start = useCallback(() => {
     getAudioCtx();
+    const sceneConfig = createScene();
+    dispatch({ type: "SCENE_CREATED", sceneConfig });
     dispatch({ type: "SET_PHASE", phase: "init" });
   }, []);
 
-  const handleSelectionUpdate = useCallback(
-    (character: Character, approach: Approach, affect: Affect) => {
-      dispatch({ type: "SELECTION_UPDATE", character, approach, affect });
+  const handleCharacterSelect = useCallback(
+    (character: Character) => {
+      dispatch({ type: "CHARACTER_SELECT", character });
     },
     []
   );
 
-  return { state, start, handleSelectionUpdate };
+  const handleApproachUpdate = useCallback(
+    (approach: Approach) => {
+      dispatch({ type: "APPROACH_UPDATE", approach });
+    },
+    []
+  );
+
+  const handleAffectUpdate = useCallback(
+    (affect: Affect) => {
+      dispatch({ type: "AFFECT_UPDATE", affect });
+    },
+    []
+  );
+
+  const handleInstantApproach = useCallback(
+    (approach: Approach) => {
+      dispatch({ type: "INSTANT_APPROACH", approach });
+    },
+    []
+  );
+
+  const handleInstantAffect = useCallback(
+    (affect: Affect) => {
+      dispatch({ type: "INSTANT_AFFECT", affect });
+    },
+    []
+  );
+
+  return { state, start, handleCharacterSelect, handleApproachUpdate, handleAffectUpdate, handleInstantApproach, handleInstantAffect };
 }
