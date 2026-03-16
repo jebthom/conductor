@@ -3,13 +3,13 @@ import { getTTS } from "@/lib/providers";
 
 export async function POST(req: Request) {
   try {
-    const { text } = await req.json();
+    const { text, voice } = await req.json();
     if (!text) {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
     }
 
     const tts = getTTS();
-    const wavBuffer = await tts.speak(text);
+    const wavBuffer = await tts.speak(text, voice);
 
     return new NextResponse(new Uint8Array(wavBuffer), {
       headers: {

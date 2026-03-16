@@ -1,5 +1,5 @@
 export interface TTSProvider {
-  speak(text: string): Promise<Buffer>;
+  speak(text: string, voice?: string): Promise<Buffer>;
 }
 
 /** Calls the Python Kokoro TTS sidecar (GPU-accelerated) */
@@ -10,11 +10,11 @@ export class KokoroSidecarProvider implements TTSProvider {
     this.baseUrl = baseUrl;
   }
 
-  async speak(text: string): Promise<Buffer> {
+  async speak(text: string, voice = "af_heart"): Promise<Buffer> {
     const res = await fetch(`${this.baseUrl}/speak`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice: "af_heart", speed: 1.0 }),
+      body: JSON.stringify({ text, voice, speed: 0.8 }),
     });
 
     if (!res.ok) {

@@ -9,9 +9,21 @@ import {
 
 const POSE_CONNECTIONS = PoseLandmarker.POSE_CONNECTIONS;
 
-export default function PoseViewer() {
+interface PoseViewerProps {
+  onBoxTouch?: (touching: boolean) => void;
+  onCircleTouch?: (touching: boolean) => void;
+}
+
+export default function PoseViewer({ onBoxTouch, onCircleTouch }: PoseViewerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const onBoxTouchRef = useRef(onBoxTouch);
+  const onCircleTouchRef = useRef(onCircleTouch);
+  const boxWasTouching = useRef(false);
+  const circleWasTouching = useRef(false);
+
+  onBoxTouchRef.current = onBoxTouch;
+  onCircleTouchRef.current = onCircleTouch;
 
   useEffect(() => {
     let cancelled = false;
@@ -92,6 +104,10 @@ export default function PoseViewer() {
           ctx.fillStyle = "rgba(0, 255, 255, 0.4)";
           ctx.fillRect(boxX, boxY, boxSize, boxSize);
         }
+        if (boxHit !== boxWasTouching.current) {
+          onBoxTouchRef.current?.(boxHit);
+        }
+        boxWasTouching.current = boxHit;
         ctx.strokeStyle = "#FFFFFF";
         ctx.lineWidth = 2;
         ctx.strokeRect(boxX, boxY, boxSize, boxSize);
@@ -108,6 +124,10 @@ export default function PoseViewer() {
           ctx.fillStyle = "rgba(0, 255, 255, 0.4)";
           ctx.fill();
         }
+        if (circleHit !== circleWasTouching.current) {
+          onCircleTouchRef.current?.(circleHit);
+        }
+        circleWasTouching.current = circleHit;
         ctx.strokeStyle = "#FFFFFF";
         ctx.lineWidth = 2;
         ctx.stroke();
