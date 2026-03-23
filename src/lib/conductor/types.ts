@@ -47,9 +47,14 @@ export interface ConductorState {
   speakingCharacter: Character | null;
   pendingLine: string | null;
   pendingCharacter: Character | null;
+  pendingApproach: Approach | null;
+  pendingAffect: Affect | null;
   pendingAudio: AudioBuffer | null;
   playbackEndedAt: number | null;
   narrationStartTime: number | null;
   narrationDuration: number | null;
   playbackEndTime: number | null;
+  sessionId: string | null;
+  lineSequence: number;
+  lastCandidatesFetchMs: number | null;
 }

@@ -56,5 +56,8 @@ Thumbs.db
 # Kokoro model cache
 /models/
 
+# Session logs
+/Sessions/
+
 # Claude Code
 CLAUDE.md

@@ -18,7 +18,7 @@ import { createScene } from "./scene";
 type Action =
   | { type: "SCENE_CREATED"; sceneConfig: SceneConfig }
   | { type: "SCENE_AUDIO_READY"; audioBuffer: AudioBuffer }
-  | { type: "CANDIDATES_READY"; candidatesA: Candidates; candidatesB: Candidates }
+  | { type: "CANDIDATES_READY"; candidatesA: Candidates; candidatesB: Candidates; fetchMs: number }
   | { type: "NARRATION_ENDED" }
   | { type: "CHARACTER_SELECT"; character: Character }
   | { type: "APPROACH_UPDATE"; approach: Approach }
@@ -30,7 +30,8 @@ type Action =
   | { type: "PLAY_PENDING" }
   | { type: "ENTER_WAITING" }
   | { type: "SET_PHASE"; phase: Phase }
-  | { type: "NARRATION_STARTED"; startTime: number; duration: number };
+  | { type: "NARRATION_STARTED"; startTime: number; duration: number }
+  | { type: "SESSION_STARTED"; sessionId: string };
 
 // ── Initial state ────────────────────────────────────────────────────────────
 
@@ -57,11 +58,16 @@ const initialState: ConductorState = {
   speakingCharacter: null,
   pendingLine: null,
   pendingCharacter: null,
+  pendingApproach: null,
+  pendingAffect: null,
   pendingAudio: null,
   playbackEndedAt: null,
   narrationStartTime: null,
   narrationDuration: null,
   playbackEndTime: null,
+  sessionId: null,
+  lineSequence: 1,
+  lastCandidatesFetchMs: null,
 };
 
 // ── Reducer ──────────────────────────────────────────────────────────────────
@@ -81,11 +87,15 @@ function reducer(state: ConductorState, action: Action): ConductorState {
         audioBuffer: action.audioBuffer,
       };
 
+    case "SESSION_STARTED":
+      return { ...state, sessionId: action.sessionId, lineSequence: 1 };
+
     case "CANDIDATES_READY":
       return {
         ...state,
         candidatesA: action.candidatesA,
         candidatesB: action.candidatesB,
+        lastCandidatesFetchMs: action.fetchMs,
       };
 
     case "NARRATION_STARTED":
@@ -180,10 +190,13 @@ function reducer(state: ConductorState, action: Action): ConductorState {
         phase: "locked",
         pendingLine: line,
         pendingCharacter: activeCharacter,
+        pendingApproach: confirmedApproach,
+        pendingAffect: confirmedAffect,
         pendingAudio: null,
         // Keep currentLine/speakingCharacter — caption shows what's playing
         history: [...state.history, `${charName}: ${line}`],
         turnNumber: state.turnNumber + 1,
+        lineSequence: state.lineSequence + 1,
         candidatesA: null,
         candidatesB: null,
         selection: initialSelection,
@@ -203,6 +216,8 @@ function reducer(state: ConductorState, action: Action): ConductorState {
         pendingAudio: null,
         pendingLine: null,
         pendingCharacter: null,
+        pendingApproach: null,
+        pendingAffect: null,
         playbackEndedAt: null,
       };
 
@@ -233,14 +248,18 @@ export function useConductor() {
     return audioCtxRef.current;
   }
 
-  async function fetchAudio(text: string, voice?: string): Promise<AudioBuffer> {
+  async function fetchAudio(
+    text: string,
+    voice?: string,
+    session?: { sessionId: string; sequence: number }
+  ): Promise<{ audioBuf: AudioBuffer; ttsMs: number }> {
     const label = text.length > 40 ? text.slice(0, 40) + "…" : text;
     console.log("[conductor] fetchAudio start:", label, voice ? `(${voice})` : "");
     const t0 = performance.now();
     const res = await fetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice }),
+      body: JSON.stringify({ text, voice, sessionId: session?.sessionId, sequence: session?.sequence }),
     });
     if (!res.ok) {
       const body = await res.text();
@@ -249,15 +268,16 @@ export function useConductor() {
     }
     const arrayBuf = await res.arrayBuffer();
     const audioBuf = await getAudioCtx().decodeAudioData(arrayBuf);
-    console.log("[conductor] fetchAudio done:", Math.round(performance.now() - t0), "ms, duration:", audioBuf.duration.toFixed(2), "s");
-    return audioBuf;
+    const ttsMs = performance.now() - t0;
+    console.log("[conductor] fetchAudio done:", Math.round(ttsMs), "ms, duration:", audioBuf.duration.toFixed(2), "s");
+    return { audioBuf, ttsMs };
   }
 
   async function fetchAllCandidates(
     scene: SceneConfig,
     history: string[],
     turnNumber: number
-  ): Promise<{ candidatesA: Candidates; candidatesB: Candidates }> {
+  ): Promise<{ candidatesA: Candidates; candidatesB: Candidates; fetchMs: number }> {
     console.log("[conductor] fetchCandidates start: both chars, history length", history.length, "turn", turnNumber);
     const t0 = performance.now();
     const res = await fetch("/api/generate-candidates", {
@@ -271,8 +291,27 @@ export function useConductor() {
       throw new Error("Candidate generation failed");
     }
     const data = await res.json();
-    console.log("[conductor] fetchCandidates done:", Math.round(performance.now() - t0), "ms");
-    return { candidatesA: data.candidatesA, candidatesB: data.candidatesB };
+    const fetchMs = performance.now() - t0;
+    console.log("[conductor] fetchCandidates done:", Math.round(fetchMs), "ms");
+    return { candidatesA: data.candidatesA, candidatesB: data.candidatesB, fetchMs };
+  }
+
+  function logSessionLine(params: {
+    sessionId: string;
+    sequence: number;
+    character?: string;
+    approach?: string;
+    affect?: string;
+    text: string;
+    durationSec: number;
+    llmMs?: number;
+    ttsMs: number;
+  }) {
+    fetch("/api/session/line", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    }).catch((err) => console.error("[conductor] session log failed:", err));
   }
 
   function playBuffer(buffer: AudioBuffer, onEnded: () => void) {
@@ -327,8 +366,19 @@ export function useConductor() {
 
     if (phase === "init") {
       if (!state.sceneConfig) return;
-      fetchAudio(state.sceneConfig.narratedIntro).then((buf) => {
-        dispatch({ type: "SCENE_AUDIO_READY", audioBuffer: buf });
+      const session = state.sessionId ? { sessionId: state.sessionId, sequence: state.lineSequence } : undefined;
+      fetchAudio(state.sceneConfig.narratedIntro, undefined, session).then(({ audioBuf, ttsMs }) => {
+        if (state.sessionId) {
+          logSessionLine({
+            sessionId: state.sessionId,
+            sequence: state.lineSequence,
+            character: "[intro]",
+            text: state.sceneConfig!.narratedIntro,
+            durationSec: audioBuf.duration,
+            ttsMs,
+          });
+        }
+        dispatch({ type: "SCENE_AUDIO_READY", audioBuffer: audioBuf });
       });
     }
 
@@ -339,22 +389,38 @@ export function useConductor() {
         dispatch({ type: "NARRATION_ENDED" });
       });
 
-      fetchAllCandidates(state.sceneConfig, state.history, state.turnNumber).then(({ candidatesA, candidatesB }) => {
-        dispatch({ type: "CANDIDATES_READY", candidatesA, candidatesB });
+      fetchAllCandidates(state.sceneConfig, state.history, state.turnNumber).then(({ candidatesA, candidatesB, fetchMs }) => {
+        dispatch({ type: "CANDIDATES_READY", candidatesA, candidatesB, fetchMs });
       });
     }
 
     if (phase === "locked") {
       if (!state.pendingLine || !state.pendingCharacter || !state.sceneConfig) return;
       const voice = state.sceneConfig.characters[state.pendingCharacter].voice;
+      const session = state.sessionId ? { sessionId: state.sessionId, sequence: state.lineSequence } : undefined;
+      const charName = state.sceneConfig.characters[state.pendingCharacter].name;
+      const { pendingLine, pendingApproach, pendingAffect, sessionId, lineSequence, lastCandidatesFetchMs } = state;
 
       // Fire TTS and candidate fetch independently
-      fetchAudio(state.pendingLine, voice).then((audioBuf) => {
+      fetchAudio(pendingLine, voice, session).then(({ audioBuf, ttsMs }) => {
+        if (sessionId) {
+          logSessionLine({
+            sessionId,
+            sequence: lineSequence,
+            character: charName,
+            approach: pendingApproach ?? undefined,
+            affect: pendingAffect ?? undefined,
+            text: pendingLine,
+            durationSec: audioBuf.duration,
+            llmMs: lastCandidatesFetchMs ?? undefined,
+            ttsMs,
+          });
+        }
         dispatch({ type: "TTS_READY", audioBuffer: audioBuf });
       });
 
-      fetchAllCandidates(state.sceneConfig, state.history, state.turnNumber).then(({ candidatesA, candidatesB }) => {
-        dispatch({ type: "CANDIDATES_READY", candidatesA, candidatesB });
+      fetchAllCandidates(state.sceneConfig, state.history, state.turnNumber).then(({ candidatesA, candidatesB, fetchMs }) => {
+        dispatch({ type: "CANDIDATES_READY", candidatesA, candidatesB, fetchMs });
       });
     }
 
@@ -437,10 +503,28 @@ export function useConductor() {
 
   // ── Public API ───────────────────────────────────────────────────────────
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     getAudioCtx();
     const sceneConfig = createScene();
     dispatch({ type: "SCENE_CREATED", sceneConfig });
+
+    // Create session folder
+    try {
+      const charA = sceneConfig.characters.A.name;
+      const charB = sceneConfig.characters.B.name;
+      const res = await fetch("/api/session/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sceneDescription: `${charA} and ${charB}` }),
+      });
+      if (res.ok) {
+        const { sessionId } = await res.json();
+        dispatch({ type: "SESSION_STARTED", sessionId });
+      }
+    } catch (err) {
+      console.error("[conductor] session start failed:", err);
+    }
+
     dispatch({ type: "SET_PHASE", phase: "init" });
   }, []);
 

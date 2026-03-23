@@ -33,12 +33,23 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
   const selectedCharRef = useRef<"A" | "B" | null>(null);
   const playbackEndTimeRef = useRef(playbackEndTime);
   const characterNamesRef = useRef(characterNames);
+  const previewRef = useRef(false);
 
   playbackEndTimeRef.current = playbackEndTime;
   characterNamesRef.current = characterNames;
   onCharacterSelectRef.current = onCharacterSelect;
   onApproachHoverRef.current = onApproachHover;
   onAffectHoverRef.current = onAffectHover;
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "p" || e.key === "P") {
+        previewRef.current = !previewRef.current;
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,7 +152,7 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         triAPath.lineTo(W, S);
         triAPath.closePath();
 
-        if (selectedCharRef.current === "A") {
+        if (previewRef.current || selectedCharRef.current === "A") {
           ctx.fillStyle = "rgba(0, 255, 255, 0.3)";
           ctx.fill(triAPath);
         }
@@ -166,7 +177,7 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         triBPath.lineTo(0, S);
         triBPath.closePath();
 
-        if (selectedCharRef.current === "B") {
+        if (previewRef.current || selectedCharRef.current === "B") {
           ctx.fillStyle = "rgba(0, 255, 255, 0.3)";
           ctx.fill(triBPath);
         }
@@ -205,6 +216,8 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
           );
           if (hit) {
             hoveredApproach = zone.approach;
+          }
+          if (hit || previewRef.current) {
             ctx.fillStyle = zone.color;
             ctx.fillRect(slotX, zone.y, slotW, slotH);
           }
@@ -263,7 +276,7 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
           ctx.arc(circleX, circleY, circleR, sl.start, sl.end);
           ctx.closePath();
 
-          if (hoveredAffect === sl.affect) {
+          if (previewRef.current || hoveredAffect === sl.affect) {
             ctx.fillStyle = sl.color;
             ctx.fill();
           }
