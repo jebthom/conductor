@@ -1,5 +1,5 @@
 export type Approach = "approach" | "neutral" | "avoid";
-export type Affect = "happy" | "sad" | "angry";
+export type Affect = "happy" | "sad" | "angry" | "very_happy" | "very_sad" | "very_angry";
 export type Character = "A" | "B";
 
 export interface CharacterInfo {

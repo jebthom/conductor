@@ -13,7 +13,7 @@ const TRIANGLE_SIZE = 250;
 const SERIF = "'Merriweather', Georgia, serif";
 
 type Approach = "approach" | "neutral" | "avoid";
-type Affect = "happy" | "sad" | "angry";
+type Affect = "happy" | "sad" | "angry" | "very_happy" | "very_sad" | "very_angry";
 
 interface PoseViewerProps {
   onCharacterSelect?: (character: "A" | "B") => void;
@@ -37,6 +37,7 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
   const narrationDurationRef = useRef(narrationDuration);
   const characterNamesRef = useRef(characterNames);
   const previewRef = useRef(false);
+  const extendedAffectRef = useRef(true);
 
   playbackEndTimeRef.current = playbackEndTime;
   narrationDurationRef.current = narrationDuration;
@@ -49,6 +50,9 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "p" || e.key === "P") {
         previewRef.current = !previewRef.current;
+      }
+      if (e.key === "o" || e.key === "O") {
+        extendedAffectRef.current = !extendedAffectRef.current;
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -245,40 +249,68 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         currentApproachRef.current = hoveredApproach;
         onApproachHoverRef.current?.(hoveredApproach);
 
-        // ── Affect circle (3-slice pie) ─────────────────────────────────
+        // ── Affect circle (3-slice pie with optional outer ring) ──────
         const circleX = (2 / 7) * canvas.width;  // visual 2/7 from right
         const circleY = canvas.height / 2;
-        const circleR = 210;
+        const innerR = 170;
+        const outerR = 210;
+        const extended = extendedAffectRef.current;
 
-        // Rotated -π/2 (clockwise 90°) so Happy sits at the top
-        const affectSlices: { affect: Affect; start: number; end: number; color: string; label: string }[] = [
-          { affect: "happy", start: 7 / 6 * Math.PI, end: 11 / 6 * Math.PI, color: "rgba(76, 175, 80, 0.5)",  label: "Happy" },
-          { affect: "sad",   start: 11 / 6 * Math.PI, end: 1 / 2 * Math.PI, color: "rgba(52, 108, 185, 0.5)", label: "Sad" },
-          { affect: "angry", start: 1 / 2 * Math.PI,  end: 7 / 6 * Math.PI, color: "rgba(198, 65, 52, 0.5)",  label: "Angry" },
+        // Angle ranges — rotated so Happy sits at the top
+        const sliceAngles: { start: number; end: number }[] = [
+          { start: 7 / 6 * Math.PI, end: 11 / 6 * Math.PI }, // happy (top)
+          { start: 11 / 6 * Math.PI, end: 1 / 2 * Math.PI }, // sad (bottom-right visually)
+          { start: 1 / 2 * Math.PI,  end: 7 / 6 * Math.PI }, // angry (bottom-left visually)
         ];
 
-        // Hit-test by angle
+        const innerSlices: { affect: Affect; start: number; end: number; color: string; label: string }[] = [
+          { affect: "happy", ...sliceAngles[0], color: "rgba(76, 175, 80, 0.5)",  label: "Happy" },
+          { affect: "sad",   ...sliceAngles[1], color: "rgba(52, 108, 185, 0.5)", label: "Sad" },
+          { affect: "angry", ...sliceAngles[2], color: "rgba(198, 65, 52, 0.5)",  label: "Angry" },
+        ];
+
+        const outerSlices: { affect: Affect; start: number; end: number; color: string; label: string }[] = [
+          { affect: "very_happy", ...sliceAngles[0], color: "rgba(46, 204, 64, 0.65)",  label: "VERY Happy" },
+          { affect: "very_sad",   ...sliceAngles[1], color: "rgba(30, 80, 220, 0.65)",  label: "VERY Sad" },
+          { affect: "very_angry", ...sliceAngles[2], color: "rgba(230, 40, 30, 0.65)",  label: "VERY Angry" },
+        ];
+
+        function angleInSlice(angle: number, start: number, end: number): boolean {
+          return start > end
+            ? (angle >= start || angle <= end)
+            : (angle >= start && angle <= end);
+        }
+
+        // Hit-test by angle + distance
         let hoveredAffect: Affect | null = null;
         for (const fp of fingerPositions) {
           const dx = fp.x - circleX;
           const dy = fp.y - circleY;
-          if (Math.hypot(dx, dy) > circleR) continue;
+          const dist = Math.hypot(dx, dy);
+          if (dist > outerR) continue;
           let angle = Math.atan2(dy, dx);
           if (angle < 0) angle += 2 * Math.PI;
-          for (const sl of affectSlices) {
-            const hit = sl.start > sl.end
-              ? (angle >= sl.start || angle <= sl.end)   // wraps around 0
-              : (angle >= sl.start && angle <= sl.end);
-            if (hit) { hoveredAffect = sl.affect; break; }
+
+          if (extended && dist > innerR) {
+            // Outer ring — very_ affects
+            for (const sl of outerSlices) {
+              if (angleInSlice(angle, sl.start, sl.end)) { hoveredAffect = sl.affect; break; }
+            }
+          } else {
+            // Inner ring (or full circle in simple mode)
+            for (const sl of innerSlices) {
+              if (angleInSlice(angle, sl.start, sl.end)) { hoveredAffect = sl.affect; break; }
+            }
           }
           if (hoveredAffect) break;
         }
 
-        // Draw slices
-        for (const sl of affectSlices) {
+        // Draw inner slices (full radius in simple mode, innerR in extended)
+        const drawInnerR = extended ? innerR : outerR;
+        for (const sl of innerSlices) {
           ctx.beginPath();
           ctx.moveTo(circleX, circleY);
-          ctx.arc(circleX, circleY, circleR, sl.start, sl.end);
+          ctx.arc(circleX, circleY, drawInnerR, sl.start, sl.end);
           ctx.closePath();
 
           if (previewRef.current || hoveredAffect === sl.affect) {
@@ -289,13 +321,14 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
           ctx.lineWidth = 1;
           ctx.stroke();
 
-          // Label at midpoint of arc, 60% out from centre
+          // Label
           const wraps = sl.start > sl.end;
           const midAngle = wraps
             ? (sl.start + (sl.end + 2 * Math.PI)) / 2
             : (sl.start + sl.end) / 2;
-          const lx = circleX + Math.cos(midAngle) * circleR * 0.6;
-          const ly = circleY + Math.sin(midAngle) * circleR * 0.6;
+          const labelR = extended ? drawInnerR * 0.5 : drawInnerR * 0.6;
+          const lx = circleX + Math.cos(midAngle) * labelR;
+          const ly = circleY + Math.sin(midAngle) * labelR;
           ctx.save();
           ctx.translate(lx, ly);
           ctx.scale(-1, 1);
@@ -305,6 +338,42 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
           ctx.textBaseline = "middle";
           ctx.fillText(sl.label, 0, 0);
           ctx.restore();
+        }
+
+        // Draw outer ring slices (extended mode only)
+        if (extended) {
+          for (const sl of outerSlices) {
+            ctx.beginPath();
+            ctx.arc(circleX, circleY, outerR, sl.start, sl.end);
+            ctx.arc(circleX, circleY, innerR, sl.end, sl.start, true);
+            ctx.closePath();
+
+            if (previewRef.current || hoveredAffect === sl.affect) {
+              ctx.fillStyle = sl.color;
+              ctx.fill();
+            }
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            // Label in the middle of the ring band
+            const wraps = sl.start > sl.end;
+            const midAngle = wraps
+              ? (sl.start + (sl.end + 2 * Math.PI)) / 2
+              : (sl.start + sl.end) / 2;
+            const bandMid = (innerR + outerR) / 2;
+            const lx = circleX + Math.cos(midAngle) * bandMid;
+            const ly = circleY + Math.sin(midAngle) * bandMid;
+            ctx.save();
+            ctx.translate(lx, ly);
+            ctx.scale(-1, 1);
+            ctx.font = `bold 11px ${SERIF}`;
+            ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(sl.label, 0, 0);
+            ctx.restore();
+          }
         }
 
         currentAffectRef.current = hoveredAffect;
@@ -326,6 +395,9 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
           happy: "76, 175, 80",
           angry: "198, 65, 52",
           sad: "52, 108, 185",
+          very_happy: "46, 204, 64",
+          very_angry: "230, 40, 30",
+          very_sad: "30, 80, 220",
         };
 
         // Drain fraction: 1 = full (just started), 0 = empty (time's up)

@@ -84,16 +84,25 @@ const COMBO_DESCRIPTORS: Record<Approach, Record<Affect, string>> = {
     happy: "Reveals something true and personal. Makes a concrete offer, admission, or declaration. Names a specific memory, fact, or feeling — no hedging.",
     sad: "Confesses something painful. Says the thing they've been holding back — a regret, a loss, an uncomfortable truth. Specific and vulnerable.",
     angry: "Confronts directly with a specific accusation or demand. Names what the other person did, asks the hard question, draws the line.",
+    very_happy: "Overwhelmed with emotion — a breathless, unguarded declaration of love, gratitude, or devotion. Melodramatically sincere, holding nothing back. Grand, operatic, embarrassingly earnest.",
+    very_sad: "Completely broken. A raw, shaking confession of devastation — the kind of admission that strips away all dignity. Theatrical grief, voice-cracking vulnerability.",
+    very_angry: "Explosive, righteous fury. A scorching accusation delivered with theatrical force — names the betrayal, the lie, the unforgivable thing, and demands an answer NOW.",
   },
   neutral: {
     happy: "Makes an observation that shifts the conversation's direction. Notices something specific — about the other person, the situation, or what was just said — that opens a new thread.",
     sad: "States a hard truth plainly, without drama. Acknowledges something both of them know but haven't said. Matter-of-fact, not self-pitying.",
     angry: "Calls out a pattern or contradiction. Points to something specific the other person is doing right now in this conversation — deflecting, lying, performing.",
+    very_happy: "A sudden, almost manic burst of clarity — sees the beautiful absurdity of the whole situation and can't help laughing about it. Giddily philosophical, theatrically delighted by the irony.",
+    very_sad: "Delivers a devastating observation with eerie calm — the quiet voice of someone who has already given up. Melodramatically resigned, as though narrating their own tragedy.",
+    very_angry: "Coldly furious dissection — a clinical, devastating enumeration of exactly how the other person has failed. Theatrical precision, each word placed like a scalpel.",
   },
   avoid: {
     happy: "Changes the subject to something concrete and specific — a memory, a joke, a plan — that clearly sidesteps what was just raised. The avoidance itself reveals something.",
     sad: "Shuts down with finality. Says something that closes a door — gives up on a point, concedes a loss, accepts something painful. Not vague withdrawal but a specific surrender.",
     angry: "Lashes out while deflecting — a specific, cutting observation about the other person that redirects the heat away from themselves. Weaponizes a truth to avoid being the one exposed.",
+    very_happy: "Manically cheerful deflection — launches into an absurdly elaborate tangent or performance, the desperate theatricality itself revealing how much they need to escape this moment.",
+    very_sad: "A melodramatic farewell or surrender — announces they're done, can't do this anymore, delivers a devastating exit line. Grand, operatic withdrawal that says everything by saying goodbye.",
+    very_angry: "Nuclear deflection — a spectacularly cruel, personal attack designed to end the conversation entirely. Goes for the jugular with theatrical venom, scorched earth to avoid being vulnerable.",
   },
 };
 
@@ -109,7 +118,7 @@ export function buildCandidatePrompt(input: {
   const name = scene.characters[character].name;
 
   const approaches: Approach[] = ["approach", "neutral", "avoid"];
-  const affects: Affect[] = ["happy", "sad", "angry"];
+  const affects: Affect[] = ["happy", "sad", "angry", "very_happy", "very_sad", "very_angry"];
 
   const comboLines = approaches
     .flatMap((app) =>
@@ -121,8 +130,9 @@ export function buildCandidatePrompt(input: {
 Respond with ONLY a JSON object — no markdown fences, no explanation.
 
 The JSON has 3 keys: "approach", "neutral", "avoid".
-Each maps to an object with keys "happy", "sad", "angry".
+Each maps to an object with keys "happy", "sad", "angry", "very_happy", "very_sad", "very_angry".
 Each value is a single sentence of natural spoken dialogue.
+The "very_" variants are melodramatically intense — operatic, theatrical, grand in scale.
 
 HOW DETAILS WORK:
 - "approach" and "neutral" lines may surface secrets from the backstory that haven't been spoken aloud yet. They bring buried truths into the open — as confessions, accusations, or observations.
@@ -153,7 +163,7 @@ ${scene.secretBackstory}
 ${name} speaks next. This is exchange ${turnNumber} of roughly 20.
 ${turnPressure}${historyBlock}
 
-Generate 9 candidate lines for ${name}.`;
+Generate 18 candidate lines for ${name}.`;
 
   return { system, user };
 }

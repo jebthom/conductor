@@ -35,7 +35,10 @@ export default function Home() {
 
   useEffect(() => {
     const APPROACH_KEYS: Record<string, Approach> = { w: "approach", s: "neutral", x: "avoid" };
-    const AFFECT_KEYS: Record<string, Affect> = { ArrowUp: "happy", ArrowLeft: "sad", ArrowRight: "angry" };
+    const AFFECT_KEYS: Record<string, Affect> = {
+      ArrowUp: "happy", ArrowLeft: "sad", ArrowRight: "angry",
+      "1": "very_happy", "2": "very_sad", "3": "very_angry",
+    };
     const CHAR_KEYS: Record<string, "A" | "B"> = { q: "A", e: "B" };
 
     function onKeyDown(e: KeyboardEvent) {
