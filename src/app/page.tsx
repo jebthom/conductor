@@ -85,6 +85,7 @@ export default function Home() {
             onApproachHover={onApproachHover}
             onAffectHover={onAffectHover}
             playbackEndTime={state.playbackEndTime}
+            narrationDuration={state.narrationDuration}
             characterNames={state.sceneConfig ? { A: state.sceneConfig.characters.A.name, B: state.sceneConfig.characters.B.name } : null}
           />
         </div>
@@ -92,34 +93,34 @@ export default function Home() {
           {state.phase === "idle" ? (
             <button
               onClick={start}
-              className="px-6 py-3 bg-white text-black font-mono text-lg rounded hover:bg-gray-200 transition-colors"
+              className="px-8 py-3 bg-white/90 text-black font-serif text-lg tracking-wide rounded-sm hover:bg-white transition-colors"
             >
               Start
             </button>
           ) : (
             <>
-              <p className="text-sm font-mono text-white/60">{phaseLabel}</p>
+              <p className="text-sm font-serif text-white/60">{phaseLabel}</p>
               {state.currentLine && state.speakingCharacter && (
-                <p className="text-lg font-mono text-white text-center">
+                <p className="text-lg font-serif text-white text-center">
                   {state.sceneConfig?.characters[state.speakingCharacter]?.name ?? state.speakingCharacter}: &quot;{state.currentLine}&quot;
                 </p>
               )}
-              <div className="flex gap-4 text-xs font-mono text-white/40">
+              <div className="flex gap-4 text-xs font-serif text-white/40">
                 <span>
                   char:{" "}
-                  <span className={state.activeCharacter ? "text-cyan-400" : ""}>
+                  <span className={state.activeCharacter ? "text-teal-300" : ""}>
                     {state.activeCharacter ?? "—"}
                   </span>
                 </span>
                 <span>
                   approach:{" "}
-                  <span className={sel.confirmedApproach ? "text-cyan-400" : ""}>
+                  <span className={sel.confirmedApproach ? "text-teal-300" : ""}>
                     {sel.confirmedApproach ?? sel.hoveredApproach ?? "—"}
                   </span>
                 </span>
                 <span>
                   affect:{" "}
-                  <span className={sel.confirmedAffect ? "text-cyan-400" : ""}>
+                  <span className={sel.confirmedAffect ? "text-teal-300" : ""}>
                     {sel.confirmedAffect ?? sel.hoveredAffect ?? "—"}
                   </span>
                 </span>

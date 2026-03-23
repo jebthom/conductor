@@ -10,6 +10,7 @@ import {
 const POSE_CONNECTIONS = PoseLandmarker.POSE_CONNECTIONS;
 
 const TRIANGLE_SIZE = 250;
+const SERIF = "'Merriweather', Georgia, serif";
 
 type Approach = "approach" | "neutral" | "avoid";
 type Affect = "happy" | "sad" | "angry";
@@ -19,10 +20,11 @@ interface PoseViewerProps {
   onApproachHover?: (approach: Approach | null) => void;
   onAffectHover?: (affect: Affect | null) => void;
   playbackEndTime?: number | null;
+  narrationDuration?: number | null;
   characterNames?: { A: string; B: string } | null;
 }
 
-export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffectHover, playbackEndTime, characterNames }: PoseViewerProps) {
+export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffectHover, playbackEndTime, narrationDuration, characterNames }: PoseViewerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const onCharacterSelectRef = useRef(onCharacterSelect);
@@ -32,10 +34,12 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
   const currentAffectRef = useRef<Affect | null>(null);
   const selectedCharRef = useRef<"A" | "B" | null>(null);
   const playbackEndTimeRef = useRef(playbackEndTime);
+  const narrationDurationRef = useRef(narrationDuration);
   const characterNamesRef = useRef(characterNames);
   const previewRef = useRef(false);
 
   playbackEndTimeRef.current = playbackEndTime;
+  narrationDurationRef.current = narrationDuration;
   characterNamesRef.current = characterNames;
   onCharacterSelectRef.current = onCharacterSelect;
   onApproachHoverRef.current = onApproachHover;
@@ -153,19 +157,19 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         triAPath.closePath();
 
         if (previewRef.current || selectedCharRef.current === "A") {
-          ctx.fillStyle = "rgba(0, 255, 255, 0.3)";
+          ctx.fillStyle = "rgba(56, 189, 186, 0.35)";
           ctx.fill(triAPath);
         }
-        ctx.strokeStyle = "#FFFFFF";
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+        ctx.lineWidth = 1.5;
         ctx.stroke(triAPath);
 
         // Label A (text must be flipped since canvas is CSS-flipped)
         ctx.save();
         ctx.translate(W - S / 3, S / 3);
         ctx.scale(-1, 1);
-        ctx.font = "bold 24px monospace";
-        ctx.fillStyle = "#FFFFFF";
+        ctx.font = `bold 22px ${SERIF}`;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
         ctx.textAlign = "center";
         ctx.fillText(characterNamesRef.current?.A ?? "A", 0, 8);
         ctx.restore();
@@ -178,59 +182,60 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         triBPath.closePath();
 
         if (previewRef.current || selectedCharRef.current === "B") {
-          ctx.fillStyle = "rgba(0, 255, 255, 0.3)";
+          ctx.fillStyle = "rgba(56, 189, 186, 0.35)";
           ctx.fill(triBPath);
         }
-        ctx.strokeStyle = "#FFFFFF";
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
+        ctx.lineWidth = 1.5;
         ctx.stroke(triBPath);
 
         // Label B
         ctx.save();
         ctx.translate(S / 3, S / 3);
         ctx.scale(-1, 1);
-        ctx.font = "bold 24px monospace";
-        ctx.fillStyle = "#FFFFFF";
+        ctx.font = `bold 22px ${SERIF}`;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
         ctx.textAlign = "center";
         ctx.fillText(characterNamesRef.current?.B ?? "B", 0, 8);
         ctx.restore();
 
         // ── Approach stoplight (canvas is flipped: visual left = high x) ──
         const slotW = 270;
-        const slotH = 160;
+        const slotHOuter = 175;
+        const slotHInner = 160;
         const slotCX = (5 / 7) * canvas.width; // visual 2/7 from left
         const slotX = slotCX - slotW / 2;
-        const totalH = slotH * 3;
+        const totalH = slotHOuter * 2 + slotHInner;
         const slotTopY = canvas.height / 2 - totalH / 2;
 
-        const approachZones: { approach: Approach; y: number; color: string; label: string }[] = [
-          { approach: "approach", y: slotTopY,              color: "rgba(0, 200, 0, 0.4)",   label: "Approach" },
-          { approach: "neutral",  y: slotTopY + slotH,     color: "rgba(255, 191, 0, 0.4)", label: "Neutral" },
-          { approach: "avoid",    y: slotTopY + slotH * 2, color: "rgba(255, 0, 0, 0.4)",   label: "Avoid" },
+        const approachZones: { approach: Approach; y: number; h: number; color: string; label: string }[] = [
+          { approach: "approach", y: slotTopY,                            h: slotHOuter, color: "rgba(76, 175, 80, 0.5)",  label: "Approach" },
+          { approach: "neutral",  y: slotTopY + slotHOuter,              h: slotHInner, color: "rgba(218, 165, 50, 0.5)", label: "Neutral" },
+          { approach: "avoid",    y: slotTopY + slotHOuter + slotHInner, h: slotHOuter, color: "rgba(198, 65, 52, 0.5)",  label: "Avoid" },
         ];
 
         let hoveredApproach: Approach | null = null;
         for (const zone of approachZones) {
           const hit = fingerPositions.some(
-            (p) => p.x >= slotX && p.x <= slotX + slotW && p.y >= zone.y && p.y <= zone.y + slotH
+            (p) => p.x >= slotX && p.x <= slotX + slotW && p.y >= zone.y && p.y <= zone.y + zone.h
           );
           if (hit) {
             hoveredApproach = zone.approach;
           }
           if (hit || previewRef.current) {
             ctx.fillStyle = zone.color;
-            ctx.fillRect(slotX, zone.y, slotW, slotH);
+            ctx.fillRect(slotX, zone.y, slotW, zone.h);
           }
-          ctx.strokeStyle = "#FFFFFF";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(slotX, zone.y, slotW, slotH);
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(slotX, zone.y, slotW, zone.h);
 
           // Label (flipped for CSS mirror)
           ctx.save();
-          ctx.translate(slotCX, zone.y + slotH / 2);
+          ctx.translate(slotCX, zone.y + zone.h / 2);
           ctx.scale(-1, 1);
-          ctx.font = "bold 16px monospace";
-          ctx.fillStyle = "#FFFFFF";
+          ctx.font = `bold 20px ${SERIF}`;
+          ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(zone.label, 0, 0);
@@ -243,13 +248,13 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         // ── Affect circle (3-slice pie) ─────────────────────────────────
         const circleX = (2 / 7) * canvas.width;  // visual 2/7 from right
         const circleY = canvas.height / 2;
-        const circleR = 180;
+        const circleR = 210;
 
         // Rotated -π/2 (clockwise 90°) so Happy sits at the top
         const affectSlices: { affect: Affect; start: number; end: number; color: string; label: string }[] = [
-          { affect: "happy", start: 7 / 6 * Math.PI, end: 11 / 6 * Math.PI, color: "rgba(0, 200, 0, 0.4)",   label: "Happy" },
-          { affect: "sad",   start: 11 / 6 * Math.PI, end: 1 / 2 * Math.PI, color: "rgba(0, 100, 255, 0.4)", label: "Sad" },
-          { affect: "angry", start: 1 / 2 * Math.PI,  end: 7 / 6 * Math.PI, color: "rgba(255, 0, 0, 0.4)",   label: "Angry" },
+          { affect: "happy", start: 7 / 6 * Math.PI, end: 11 / 6 * Math.PI, color: "rgba(76, 175, 80, 0.5)",  label: "Happy" },
+          { affect: "sad",   start: 11 / 6 * Math.PI, end: 1 / 2 * Math.PI, color: "rgba(52, 108, 185, 0.5)", label: "Sad" },
+          { affect: "angry", start: 1 / 2 * Math.PI,  end: 7 / 6 * Math.PI, color: "rgba(198, 65, 52, 0.5)",  label: "Angry" },
         ];
 
         // Hit-test by angle
@@ -280,8 +285,8 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
             ctx.fillStyle = sl.color;
             ctx.fill();
           }
-          ctx.strokeStyle = "#FFFFFF";
-          ctx.lineWidth = 2;
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+          ctx.lineWidth = 1;
           ctx.stroke();
 
           // Label at midpoint of arc, 60% out from centre
@@ -294,8 +299,8 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
           ctx.save();
           ctx.translate(lx, ly);
           ctx.scale(-1, 1);
-          ctx.font = "bold 14px monospace";
-          ctx.fillStyle = "#FFFFFF";
+          ctx.font = `bold 20px ${SERIF}`;
+          ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
           ctx.textAlign = "center";
           ctx.textBaseline = "middle";
           ctx.fillText(sl.label, 0, 0);
@@ -312,30 +317,54 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         const barY = canvas.height - barH;
         const halfW = barW / 2;
 
-        const approachColors: Record<Approach, string> = {
-          approach: "rgba(0, 200, 0, 0.4)",
-          neutral: "rgba(255, 191, 0, 0.4)",
-          avoid: "rgba(255, 0, 0, 0.4)",
+        const approachRGB: Record<Approach, string> = {
+          approach: "76, 175, 80",
+          neutral: "218, 165, 50",
+          avoid: "198, 65, 52",
         };
-        const affectColors: Record<Affect, string> = {
-          happy: "rgba(0, 200, 0, 0.4)",
-          angry: "rgba(255, 0, 0, 0.4)",
-          sad: "rgba(0, 100, 255, 0.4)",
+        const affectRGB: Record<Affect, string> = {
+          happy: "76, 175, 80",
+          angry: "198, 65, 52",
+          sad: "52, 108, 185",
         };
+
+        // Drain fraction: 1 = full (just started), 0 = empty (time's up)
+        const endTime = playbackEndTimeRef.current;
+        const totalDur = narrationDurationRef.current;
+        const remaining = endTime ? Math.max(0, (endTime - Date.now()) / 1000) : null;
+        const drainFrac = (remaining !== null && totalDur && totalDur > 0)
+          ? Math.min(1, remaining / totalDur)
+          : 0;
 
         // Visual left (canvas right) — approach color
         if (currentApproachRef.current) {
-          ctx.fillStyle = approachColors[currentApproachRef.current];
+          const rgb = approachRGB[currentApproachRef.current];
+          // Transparent background (always full)
+          ctx.fillStyle = `rgba(${rgb}, 0.15)`;
           ctx.fillRect(barX + halfW, barY, halfW, barH);
+          // Opaque fill that drains downward (top edge descends)
+          if (drainFrac > 0) {
+            const fillH = barH * drainFrac;
+            ctx.fillStyle = `rgba(${rgb}, 0.55)`;
+            ctx.fillRect(barX + halfW, barY + barH - fillH, halfW, fillH);
+          }
         }
         // Visual right (canvas left) — affect color
         if (currentAffectRef.current) {
-          ctx.fillStyle = affectColors[currentAffectRef.current];
+          const rgb = affectRGB[currentAffectRef.current];
+          // Transparent background (always full)
+          ctx.fillStyle = `rgba(${rgb}, 0.15)`;
           ctx.fillRect(barX, barY, halfW, barH);
+          // Opaque fill that drains downward (top edge descends)
+          if (drainFrac > 0) {
+            const fillH = barH * drainFrac;
+            ctx.fillStyle = `rgba(${rgb}, 0.55)`;
+            ctx.fillRect(barX, barY + barH - fillH, halfW, fillH);
+          }
         }
 
         // Border
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
         ctx.lineWidth = 1;
         ctx.strokeRect(barX, barY, barW, barH);
         // Divider
@@ -349,34 +378,31 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         const charLabel = selectedCharRef.current
           ? (names?.[selectedCharRef.current] ?? selectedCharRef.current)
           : "—";
-        const endTime = playbackEndTimeRef.current;
-        const remaining = endTime ? Math.max(0, (endTime - Date.now()) / 1000) : null;
-        const timerStr = remaining !== null ? `  [${remaining.toFixed(1)}s]` : "";
 
         ctx.save();
         ctx.translate(barX + halfW, barY + barH / 2);
         ctx.scale(-1, 1);
-        ctx.font = "bold 36px monospace";
-        ctx.fillStyle = "#FFFFFF";
+        ctx.font = `bold 32px ${SERIF}`;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(`Next Line: ${charLabel}${timerStr}`, 0, 0);
+        ctx.fillText(`Next Line: ${charLabel}`, 0, 0);
         ctx.restore();
 
         const drawingUtils = new DrawingUtils(ctx);
         for (const landmarks of result.landmarks) {
           // Draw connectors first (skeleton lines)
           drawingUtils.drawConnectors(landmarks, POSE_CONNECTIONS, {
-            color: "#00FFFF",
-            lineWidth: 2,
+            color: "rgba(120, 200, 200, 0.7)",
+            lineWidth: 1.5,
           });
 
           // Draw landmarks individually for per-joint styling
           landmarks.forEach((lm, i) => {
             const isMiddleHand = MIDDLE_HAND_INDICES.has(i);
             drawingUtils.drawLandmarks([lm], {
-              radius: isMiddleHand ? 9 : 3,
-              color: isMiddleHand ? "#FF0000" : "#00FFFF",
+              radius: isMiddleHand ? 8 : 2.5,
+              color: isMiddleHand ? "rgba(220, 80, 60, 0.9)" : "rgba(120, 200, 200, 0.7)",
             });
 
             if (isMiddleHand) {
@@ -387,8 +413,8 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
               ctx.save();
               ctx.translate(tx, ty);
               ctx.scale(-1, 1);
-              ctx.font = "20px monospace";
-              ctx.fillStyle = "#FFFFFF";
+              ctx.font = `16px ${SERIF}`;
+              ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
               ctx.fillText(`(${px}, ${py})`, 14, 4);
               ctx.restore();
             }
