@@ -1,23 +1,24 @@
 import { NextResponse } from "next/server";
-import { getLLM } from "@/lib/providers";
 import { buildCandidatePrompt } from "@/lib/conductor/scene";
-import type { SceneConfig } from "@/lib/conductor/types";
+import { AnthropicProvider } from "@/lib/providers/llm";
+import type { Character, SceneConfig } from "@/lib/conductor/types";
 
 export async function POST(req: Request) {
   try {
-    const { scene, history, turnNumber } = (await req.json()) as {
+    const { scene, history, turnNumber, character } = (await req.json()) as {
       scene: SceneConfig;
       history: string[];
       turnNumber: number;
+      character: Character;
     };
 
-    const llm = getLLM();
-    const [candidatesA, candidatesB] = await Promise.all([
-      llm.generateCandidates(buildCandidatePrompt({ scene, history, character: "A", turnNumber })),
-      llm.generateCandidates(buildCandidatePrompt({ scene, history, character: "B", turnNumber })),
-    ]);
+    // Fresh provider per request to avoid shared-client serialization
+    const llm = new AnthropicProvider();
+    const candidates = await llm.generateCandidates(
+      buildCandidatePrompt({ scene, history, character, turnNumber })
+    );
 
-    return NextResponse.json({ candidatesA, candidatesB });
+    return NextResponse.json({ candidates });
   } catch (error) {
     console.error("Candidate generation error:", error);
     return NextResponse.json(

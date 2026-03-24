@@ -273,6 +273,26 @@ export function useConductor() {
     return { audioBuf, ttsMs };
   }
 
+  async function fetchCandidatesForCharacter(
+    scene: SceneConfig,
+    history: string[],
+    turnNumber: number,
+    character: Character
+  ): Promise<Candidates> {
+    const res = await fetch("/api/generate-candidates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scene, history, turnNumber, character }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[conductor] fetchCandidates ${character} FAILED:`, res.status, body);
+      throw new Error(`Candidate generation failed for ${character}`);
+    }
+    const data = await res.json();
+    return data.candidates as Candidates;
+  }
+
   async function fetchAllCandidates(
     scene: SceneConfig,
     history: string[],
@@ -280,20 +300,13 @@ export function useConductor() {
   ): Promise<{ candidatesA: Candidates; candidatesB: Candidates; fetchMs: number }> {
     console.log("[conductor] fetchCandidates start: both chars, history length", history.length, "turn", turnNumber);
     const t0 = performance.now();
-    const res = await fetch("/api/generate-candidates", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scene, history, turnNumber }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      console.error("[conductor] fetchCandidates FAILED:", res.status, body);
-      throw new Error("Candidate generation failed");
-    }
-    const data = await res.json();
+    const [candidatesA, candidatesB] = await Promise.all([
+      fetchCandidatesForCharacter(scene, history, turnNumber, "A"),
+      fetchCandidatesForCharacter(scene, history, turnNumber, "B"),
+    ]);
     const fetchMs = performance.now() - t0;
     console.log("[conductor] fetchCandidates done:", Math.round(fetchMs), "ms");
-    return { candidatesA: data.candidatesA, candidatesB: data.candidatesB, fetchMs };
+    return { candidatesA, candidatesB, fetchMs };
   }
 
   function logSessionLine(params: {

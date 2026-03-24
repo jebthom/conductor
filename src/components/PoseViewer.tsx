@@ -252,8 +252,8 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         // ── Affect circle (3-slice pie with optional outer ring) ──────
         const circleX = (2 / 7) * canvas.width;  // visual 2/7 from right
         const circleY = canvas.height / 2;
-        const innerR = 170;
-        const outerR = 210;
+        const innerR = 160;
+        const outerR = 250;
         const extended = extendedAffectRef.current;
 
         // Angle ranges — rotated so Happy sits at the top
@@ -270,9 +270,9 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         ];
 
         const outerSlices: { affect: Affect; start: number; end: number; color: string; label: string }[] = [
-          { affect: "very_happy", ...sliceAngles[0], color: "rgba(46, 204, 64, 0.65)",  label: "VERY Happy" },
-          { affect: "very_sad",   ...sliceAngles[1], color: "rgba(30, 80, 220, 0.65)",  label: "VERY Sad" },
-          { affect: "very_angry", ...sliceAngles[2], color: "rgba(230, 40, 30, 0.65)",  label: "VERY Angry" },
+          { affect: "very_happy", ...sliceAngles[0], color: "rgba(46, 204, 64, 0.65)",  label: "Very Happy" },
+          { affect: "very_sad",   ...sliceAngles[1], color: "rgba(30, 80, 220, 0.65)",  label: "Very Sad" },
+          { affect: "very_angry", ...sliceAngles[2], color: "rgba(230, 40, 30, 0.65)",  label: "Very Angry" },
         ];
 
         function angleInSlice(angle: number, start: number, end: number): boolean {
