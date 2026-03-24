@@ -9,8 +9,73 @@ const PoseViewer = dynamic(() => import("@/components/PoseViewer"), {
   ssr: false,
 });
 
+// ── Tutorial / description text ─────────────────────────────────────────────
+
+const COMBO_TEXT: Record<Approach, Record<Affect, string>> = {
+  approach: {
+    happy: "A warm confession — sharing something true and personal",
+    sad: "A painful admission — saying the thing they've been holding back",
+    angry: "A direct confrontation — naming what the other person did",
+    very_happy: "An overwhelming declaration — breathless, unguarded devotion",
+    very_sad: "A devastating confession — raw, dignity-stripping vulnerability",
+    very_angry: "Explosive fury — a scorching accusation demanding answers",
+  },
+  neutral: {
+    happy: "A bright observation — noticing something that opens a new thread",
+    sad: "A plain hard truth — acknowledging what both already know",
+    angry: "A sharp callout — pointing to a pattern or contradiction",
+    very_happy: "Giddy clarity — laughing at the beautiful absurdity of it all",
+    very_sad: "Eerie calm — the quiet voice of someone who's already given up",
+    very_angry: "Cold dissection — clinically naming exactly how they failed",
+  },
+  avoid: {
+    happy: "A cheerful dodge — changing the subject to a memory or joke",
+    sad: "A quiet surrender — closing a door, accepting something painful",
+    angry: "A cutting deflection — weaponizing a truth to redirect the heat",
+    very_happy: "Manic cheerfulness — desperate theatrical escape from the moment",
+    very_sad: "A grand farewell — saying everything by walking away",
+    very_angry: "Nuclear deflection — a spectacularly cruel attack to end it all",
+  },
+};
+
+const APPROACH_TEXT: Record<Approach, string> = {
+  approach: "Lean in — reveal, confess, or confront",
+  neutral: "Hold steady — observe, acknowledge, or redirect",
+  avoid: "Pull back — deflect, shut down, or escape",
+};
+
+const AFFECT_TEXT: Record<Affect, string> = {
+  happy: "Warm — joy, gratitude, connection",
+  sad: "Heavy — grief, regret, loss",
+  angry: "Sharp — accusation, demand, confrontation",
+  very_happy: "Elated — overwhelming, operatic joy",
+  very_sad: "Devastated — raw, theatrical grief",
+  very_angry: "Furious — explosive, scorching rage",
+};
+
+const CHARACTER_TEXT: Record<"A" | "B", string> = {
+  A: "You'll speak as this character next",
+  B: "You'll speak as this character next",
+};
+
+const IDLE_TEXT = "Move your hands into the zones to shape the conversation";
+
+function getTutorialText(
+  approach: Approach | null,
+  affect: Affect | null,
+  character: "A" | "B" | null,
+  charNames: { A: string; B: string } | null
+): string {
+  if (approach && affect) return COMBO_TEXT[approach][affect];
+  if (approach) return APPROACH_TEXT[approach];
+  if (affect) return AFFECT_TEXT[affect];
+  if (character && charNames) return `${charNames[character]} — ${CHARACTER_TEXT[character]}`;
+  if (character) return `Character ${character} — ${CHARACTER_TEXT[character]}`;
+  return IDLE_TEXT;
+}
+
 export default function Home() {
-  const { state, start, handleCharacterSelect, handleApproachUpdate, handleAffectUpdate, handleInstantApproach, handleInstantAffect } = useConductor();
+  const { state, start, handleCharacterSelect, handleApproachUpdate, handleAffectUpdate, handleInstantApproach, handleInstantAffect, handleBeginEnding } = useConductor();
 
   const onCharacterSelect = useCallback(
     (character: "A" | "B") => handleCharacterSelect(character),
@@ -18,16 +83,12 @@ export default function Home() {
   );
 
   const onApproachHover = useCallback(
-    (approach: Approach | null) => {
-      if (approach) handleApproachUpdate(approach);
-    },
+    (approach: Approach | null) => handleApproachUpdate(approach),
     [handleApproachUpdate]
   );
 
   const onAffectHover = useCallback(
-    (affect: Affect | null) => {
-      if (affect) handleAffectUpdate(affect);
-    },
+    (affect: Affect | null) => handleAffectUpdate(affect),
     [handleAffectUpdate]
   );
 
@@ -61,7 +122,7 @@ export default function Home() {
   const phaseLabel = (() => {
     switch (state.phase) {
       case "idle":
-        return 'Click "Start" to begin';
+        return "Hold your hand over Start to begin";
       case "init":
         return "Loading scene...";
       case "narrating-intro":
@@ -72,12 +133,22 @@ export default function Home() {
         return "Preparing speech...";
       case "waiting":
         return "Waiting for selection...";
+      case "finished":
+        return "Scene complete.";
       default:
         return state.phase;
     }
   })();
 
   const sel = state.selection;
+  const charNames = state.sceneConfig ? { A: state.sceneConfig.characters.A.name, B: state.sceneConfig.characters.B.name } : null;
+
+  const tutorialText = getTutorialText(
+    sel.hoveredApproach,
+    sel.hoveredAffect,
+    state.activeCharacter,
+    charNames
+  );
 
   return (
     <main className="h-screen w-screen flex items-center justify-center bg-black">
@@ -87,50 +158,47 @@ export default function Home() {
             onCharacterSelect={onCharacterSelect}
             onApproachHover={onApproachHover}
             onAffectHover={onAffectHover}
+            onEndTriggered={handleBeginEnding}
+            onStartTriggered={start}
             playbackEndTime={state.playbackEndTime}
             narrationDuration={state.narrationDuration}
-            characterNames={state.sceneConfig ? { A: state.sceneConfig.characters.A.name, B: state.sceneConfig.characters.B.name } : null}
+            characterNames={charNames}
+            endingTurnsLeft={state.endingTurnsLeft}
+            phase={state.phase}
           />
         </div>
         <div className="h-1/4 flex flex-col items-center justify-center px-4 gap-2">
-          {state.phase === "idle" ? (
-            <button
-              onClick={start}
-              className="px-8 py-3 bg-white/90 text-black font-serif text-lg tracking-wide rounded-sm hover:bg-white transition-colors"
-            >
-              Start
-            </button>
+          <p className="text-sm font-serif text-white/60">{phaseLabel}</p>
+          {state.currentLine && state.speakingCharacter ? (
+            <p className="text-lg font-serif text-white text-center">
+              {state.sceneConfig?.characters[state.speakingCharacter]?.name ?? state.speakingCharacter}: &quot;{state.currentLine}&quot;
+            </p>
           ) : (
-            <>
-              <p className="text-sm font-serif text-white/60">{phaseLabel}</p>
-              {state.currentLine && state.speakingCharacter && (
-                <p className="text-lg font-serif text-white text-center">
-                  {state.sceneConfig?.characters[state.speakingCharacter]?.name ?? state.speakingCharacter}: &quot;{state.currentLine}&quot;
-                </p>
-              )}
-              <div className="flex gap-4 text-xs font-serif text-white/40">
-                <span>
-                  char:{" "}
-                  <span className={state.activeCharacter ? "text-teal-300" : ""}>
-                    {state.activeCharacter ?? "—"}
-                  </span>
-                </span>
-                <span>
-                  approach:{" "}
-                  <span className={sel.confirmedApproach ? "text-teal-300" : ""}>
-                    {sel.confirmedApproach ?? sel.hoveredApproach ?? "—"}
-                  </span>
-                </span>
-                <span>
-                  affect:{" "}
-                  <span className={sel.confirmedAffect ? "text-teal-300" : ""}>
-                    {sel.confirmedAffect ?? sel.hoveredAffect ?? "—"}
-                  </span>
-                </span>
-                <span>history: {state.history.length}</span>
-              </div>
-            </>
+            <p className="text-base font-serif text-white/70 text-center italic">
+              {tutorialText}
+            </p>
           )}
+          <div className="flex gap-4 text-xs font-serif text-white/40">
+            <span>
+              char:{" "}
+              <span className={state.activeCharacter ? "text-teal-300" : ""}>
+                {state.activeCharacter ?? "—"}
+              </span>
+            </span>
+            <span>
+              approach:{" "}
+              <span className={sel.confirmedApproach ? "text-teal-300" : ""}>
+                {sel.confirmedApproach ?? sel.hoveredApproach ?? "—"}
+              </span>
+            </span>
+            <span>
+              affect:{" "}
+              <span className={sel.confirmedAffect ? "text-teal-300" : ""}>
+                {sel.confirmedAffect ?? sel.hoveredAffect ?? "—"}
+              </span>
+            </span>
+            <span>history: {state.history.length}</span>
+          </div>
         </div>
       </div>
     </main>

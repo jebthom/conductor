@@ -5,17 +5,18 @@ import type { Character, SceneConfig } from "@/lib/conductor/types";
 
 export async function POST(req: Request) {
   try {
-    const { scene, history, turnNumber, character } = (await req.json()) as {
+    const { scene, history, turnNumber, character, endingTurnsLeft } = (await req.json()) as {
       scene: SceneConfig;
       history: string[];
       turnNumber: number;
       character: Character;
+      endingTurnsLeft?: number | null;
     };
 
     // Fresh provider per request to avoid shared-client serialization
     const llm = new AnthropicProvider();
     const candidates = await llm.generateCandidates(
-      buildCandidatePrompt({ scene, history, character, turnNumber })
+      buildCandidatePrompt({ scene, history, character, turnNumber, endingTurnsLeft })
     );
 
     return NextResponse.json({ candidates });

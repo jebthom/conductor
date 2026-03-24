@@ -15,16 +15,22 @@ const SERIF = "'Merriweather', Georgia, serif";
 type Approach = "approach" | "neutral" | "avoid";
 type Affect = "happy" | "sad" | "angry" | "very_happy" | "very_sad" | "very_angry";
 
+type Phase = "idle" | "init" | "narrating-intro" | "narrating" | "locked" | "waiting" | "finished";
+
 interface PoseViewerProps {
   onCharacterSelect?: (character: "A" | "B") => void;
   onApproachHover?: (approach: Approach | null) => void;
   onAffectHover?: (affect: Affect | null) => void;
+  onEndTriggered?: () => void;
+  onStartTriggered?: () => void;
   playbackEndTime?: number | null;
   narrationDuration?: number | null;
   characterNames?: { A: string; B: string } | null;
+  endingTurnsLeft?: number | null;
+  phase?: Phase;
 }
 
-export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffectHover, playbackEndTime, narrationDuration, characterNames }: PoseViewerProps) {
+export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffectHover, onEndTriggered, onStartTriggered, playbackEndTime, narrationDuration, characterNames, endingTurnsLeft, phase }: PoseViewerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const onCharacterSelectRef = useRef(onCharacterSelect);
@@ -33,18 +39,27 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
   const currentApproachRef = useRef<Approach | null>(null);
   const currentAffectRef = useRef<Affect | null>(null);
   const selectedCharRef = useRef<"A" | "B" | null>(null);
+  const onEndTriggeredRef = useRef(onEndTriggered);
+  const onStartTriggeredRef = useRef(onStartTriggered);
+  const phaseRef = useRef(phase);
   const playbackEndTimeRef = useRef(playbackEndTime);
   const narrationDurationRef = useRef(narrationDuration);
   const characterNamesRef = useRef(characterNames);
+  const endingTurnsLeftRef = useRef(endingTurnsLeft);
   const previewRef = useRef(false);
   const extendedAffectRef = useRef(true);
+  const endHeldSinceRef = useRef<number | null>(null);
 
   playbackEndTimeRef.current = playbackEndTime;
   narrationDurationRef.current = narrationDuration;
   characterNamesRef.current = characterNames;
+  endingTurnsLeftRef.current = endingTurnsLeft;
   onCharacterSelectRef.current = onCharacterSelect;
   onApproachHoverRef.current = onApproachHover;
   onAffectHoverRef.current = onAffectHover;
+  onEndTriggeredRef.current = onEndTriggered;
+  onStartTriggeredRef.current = onStartTriggered;
+  phaseRef.current = phase;
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -379,6 +394,65 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         currentAffectRef.current = hoveredAffect;
         onAffectHoverRef.current?.(hoveredAffect);
 
+        // ── Top button: Start (idle) or End (active) ─────────────────
+        const topBtnW = 180;
+        const topBtnH = 70;
+        const topBtnX = (canvas.width - topBtnW) / 2;
+        const topBtnY = 0;
+        const HOLD_MS = 2000;
+
+        const isIdle = phaseRef.current === "idle" || phaseRef.current === "finished";
+        const endingActive = endingTurnsLeftRef.current !== null && endingTurnsLeftRef.current !== undefined;
+        const showTopBtn = isIdle || !endingActive;
+
+        if (showTopBtn) {
+          const btnLabel = isIdle ? "Start" : "End";
+          const rgb = isIdle ? "76, 175, 80" : "198, 65, 52";
+
+          const topHit = fingerPositions.some(
+            (p) => p.x >= topBtnX && p.x <= topBtnX + topBtnW && p.y >= topBtnY && p.y <= topBtnY + topBtnH
+          );
+
+          const now = Date.now();
+          if (topHit) {
+            if (endHeldSinceRef.current === null) endHeldSinceRef.current = now;
+            const held = now - endHeldSinceRef.current;
+            const holdFrac = Math.min(1, held / HOLD_MS);
+
+            ctx.fillStyle = `rgba(${rgb}, 0.15)`;
+            ctx.fillRect(topBtnX, topBtnY, topBtnW, topBtnH);
+            const fillH = topBtnH * holdFrac;
+            ctx.fillStyle = `rgba(${rgb}, 0.55)`;
+            ctx.fillRect(topBtnX, topBtnY + topBtnH - fillH, topBtnW, fillH);
+
+            if (held >= HOLD_MS) {
+              endHeldSinceRef.current = null;
+              if (isIdle) onStartTriggeredRef.current?.();
+              else onEndTriggeredRef.current?.();
+            }
+          } else {
+            endHeldSinceRef.current = null;
+            if (previewRef.current) {
+              ctx.fillStyle = `rgba(${rgb}, 0.25)`;
+              ctx.fillRect(topBtnX, topBtnY, topBtnW, topBtnH);
+            }
+          }
+
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(topBtnX, topBtnY, topBtnW, topBtnH);
+
+          ctx.save();
+          ctx.translate(topBtnX + topBtnW / 2, topBtnY + topBtnH / 2);
+          ctx.scale(-1, 1);
+          ctx.font = `bold 20px ${SERIF}`;
+          ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(btnLabel, 0, 0);
+          ctx.restore();
+        }
+
         // ── Status bar at bottom ────────────────────────────────────────
         const barW = canvas.width * 2 / 3;
         const barH = 100;
@@ -458,7 +532,15 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(`Next Line: ${charLabel}`, 0, 0);
+        const currentPhase = phaseRef.current;
+        const isActive = currentPhase && currentPhase !== "idle" && currentPhase !== "finished";
+        if (isActive && !selectedCharRef.current) {
+          ctx.fillText("Select a Character", 0, 0);
+        } else {
+          const etl = endingTurnsLeftRef.current;
+          const lineLabel = etl === 2 ? "Second Last Line" : etl === 1 ? "Last Line" : "Next Line";
+          ctx.fillText(`${lineLabel}: ${charLabel}`, 0, 0);
+        }
         ctx.restore();
 
         const drawingUtils = new DrawingUtils(ctx);

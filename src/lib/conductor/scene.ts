@@ -1,48 +1,107 @@
-import type { Approach, Affect, Character, SceneConfig } from "./types";
+import type { Approach, Affect, AffectCategory, Character, SceneConfig } from "./types";
 
 // ── Randomization pools ─────────────────────────────────────────────────────
 
 const NAMES_FEMALE = ["Elena", "Margot", "Delia", "Simone", "Nadia", "Vera", "Iris", "Cleo"];
 const NAMES_MALE = ["Marcus", "Julian", "Declan", "Anton", "Samir", "Leo", "Rafe", "Theo"];
 
-const SECRETS_A = [
-  "She stole from his family's business and was never caught.",
-  "She's been secretly recording their conversations for months.",
-  "She once testified against someone innocent to protect herself.",
-  "She's the reason his last relationship ended, though he doesn't know it.",
-  "She's been offered a position that would require betraying his trust.",
-  "She discovered something about his past that could ruin him.",
+// const SETTINGS = [
+//   "a near-empty hotel bar at 2 AM",
+//   "a rain-soaked park bench at dusk",
+//   "a hospital waiting room after visiting hours",
+//   "the roof of their old apartment building",
+//   "a ferry crossing on a grey morning",
+//   "a half-packed kitchen the night before a move",
+// ];
+const SETTING = "the roof of their old apartment building";
+
+// ── Surface secrets (mild, character-establishing) ──────────────────────────
+
+const SURFACE_SECRETS_A = [
+  "She hasn't been home in three years and her family doesn't know where she is.",
+  "She quit her job last month and hasn't told anyone yet.",
+  "She's been writing letters she never sends.",
+  "She came here tonight to say goodbye, but hasn't found the words.",
+  "She's been carrying a photograph she found in his old apartment.",
+  "She knows his phone number by heart but has never called.",
 ];
 
-const SECRETS_B = [
-  "He just found out he's terminally ill and has told no one.",
-  "He's been living under a false identity for the past three years.",
-  "He witnessed something terrible and chose to stay silent.",
-  "He's about to disappear — new city, new name, no goodbyes.",
-  "He recently learned they share a connection neither of them suspects.",
-  "He's carrying a message from someone she thought was dead.",
+const SURFACE_SECRETS_B = [
+  "He's been sleeping on a friend's couch for the past two weeks.",
+  "He drove four hours to be here and told no one where he was going.",
+  "He's been sober for sixty days and counting.",
+  "He's wearing his father's watch — the one he swore he'd never put on.",
+  "He almost didn't come tonight.",
+  "He's been rehearsing what to say for weeks.",
 ];
 
-const SECRETS_SHARED = [
-  "They both covered up an incident in college that ruined someone's life.",
-  "They were both involved in the same betrayal, each thinking the other doesn't know.",
-  "They each separately promised the same dying person they'd take care of the other.",
-  "They both know a secret about a mutual friend that could destroy everything.",
-  "They once made a pact they swore never to speak of again.",
-  "They were both witnesses to something they agreed to forget.",
-];
+// ── Core secrets (intense, affect-categorized) ──────────────────────────────
 
-const SETTINGS = [
-  "a near-empty hotel bar at 2 AM",
-  "a rain-soaked park bench at dusk",
-  "a hospital waiting room after visiting hours",
-  "the roof of their old apartment building",
-  "a ferry crossing on a grey morning",
-  "a half-packed kitchen the night before a move",
-];
+const CORE_SECRETS_A: Record<AffectCategory, string[]> = {
+  happy: [
+    "She's pregnant and he's the only person she wants to tell.",
+    "She got the letter — she's been accepted to the program she's dreamed about since she was sixteen.",
+    "She realized she's still in love with him and it's the first thing that's made her feel alive in years.",
+  ],
+  sad: [
+    "She found out her mother is dying and she can't go home to see her.",
+    "She's been diagnosed with something she can't bring herself to name.",
+    "She scattered her best friend's ashes last Tuesday and hasn't cried yet.",
+  ],
+  angry: [
+    "She found the emails — she knows exactly what he did and who he did it with.",
+    "She discovered he's been lying about where the money went — all of it.",
+    "She has proof that he's the one who reported her to the board.",
+  ],
+};
+
+const CORE_SECRETS_B: Record<AffectCategory, string[]> = {
+  happy: [
+    "He just found out he has a daughter he never knew about, and she wants to meet him.",
+    "He sold everything and bought two plane tickets — one for her, if she'll take it.",
+    "He's been offered a second chance he thought was impossible and he's terrified to believe it.",
+  ],
+  sad: [
+    "He just got back from identifying a body and he hasn't told anyone whose it was.",
+    "He's been writing a will because the doctors gave him a number and it wasn't a big one.",
+    "He watched the building they grew up in get demolished last week and stood there until dark.",
+  ],
+  angry: [
+    "He knows she's the one who turned him in — he has the recording.",
+    "He found out the whole thing was a setup and she was in on it from the start.",
+    "He just learned that the person who destroyed his career did it as a favor to her.",
+  ],
+};
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// ── Affect category helpers ─────────────────────────────────────────────────
+
+export function affectToCategory(affect: Affect): AffectCategory {
+  if (affect === "happy" || affect === "very_happy") return "happy";
+  if (affect === "sad" || affect === "very_sad") return "sad";
+  return "angry";
+}
+
+export function getAffectWinner(history: AffectCategory[]): AffectCategory | null {
+  const counts: Record<AffectCategory, number> = { happy: 0, sad: 0, angry: 0 };
+  for (const cat of history) counts[cat]++;
+  const sorted = (Object.entries(counts) as [AffectCategory, number][]).sort((a, b) => b[1] - a[1]);
+  if (sorted[0][1] > sorted[1][1]) return sorted[0][0];
+  return null; // tie — keep tracking
+}
+
+/** Pick core secrets for both characters from the given affect category. */
+export function assignCoreSecrets(scene: SceneConfig, category: AffectCategory): SceneConfig {
+  return {
+    ...scene,
+    characters: {
+      A: { ...scene.characters.A, coreSecret: pick(CORE_SECRETS_A[category]) },
+      B: { ...scene.characters.B, coreSecret: pick(CORE_SECRETS_B[category]) },
+    },
+  };
 }
 
 // ── Scene creation ──────────────────────────────────────────────────────────
@@ -52,27 +111,13 @@ export function createScene(): SceneConfig {
   let nameB = pick(NAMES_MALE);
   while (nameB === nameA) nameB = pick(NAMES_MALE);
 
-  const secretA = pick(SECRETS_A);
-  const secretB = pick(SECRETS_B);
-  const secretShared = pick(SECRETS_SHARED);
-  const setting = pick(SETTINGS);
-
-  const narratedIntro = `${nameA} and ${nameB} find themselves at ${setting}. They haven't spoken in a long time, and neither expected to be here tonight.`;
-
-  const secretBackstory = [
-    "NEVER reference these secrets directly — let them bleed into subtext, coloring word choice and emotional weight.",
-    "",
-    `${nameA}'s secret: ${secretA}`,
-    `${nameB}'s secret: ${secretB}`,
-    `Shared secret: ${secretShared}`,
-  ].join("\n");
+  const narratedIntro = `${nameA} and ${nameB} find themselves on ${SETTING}. They haven't spoken in a long time, and neither expected to be here tonight.`;
 
   return {
     narratedIntro,
-    secretBackstory,
     characters: {
-      A: { name: nameA, voice: "af_heart", secretDetail: secretA },
-      B: { name: nameB, voice: "am_michael", secretDetail: secretB },
+      A: { name: nameA, voice: "af_heart", surfaceSecret: pick(SURFACE_SECRETS_A), coreSecret: null },
+      B: { name: nameB, voice: "am_michael", surfaceSecret: pick(SURFACE_SECRETS_B), coreSecret: null },
     },
   };
 }
@@ -113,8 +158,11 @@ export function buildCandidatePrompt(input: {
   history: string[];
   character: Character;
   turnNumber: number;
+  endingTurnsLeft?: number | null;
 }): { system: string; user: string } {
-  const { scene, history, character, turnNumber } = input;
+  const { scene, history, character, turnNumber, endingTurnsLeft } = input;
+  const charA = scene.characters.A;
+  const charB = scene.characters.B;
   const name = scene.characters[character].name;
 
   const approaches: Approach[] = ["approach", "neutral", "avoid"];
@@ -138,18 +186,33 @@ HOW DETAILS WORK:
 - "approach" and "neutral" lines may surface secrets from the backstory that haven't been spoken aloud yet. They bring buried truths into the open — as confessions, accusations, or observations.
 - "avoid" lines must ONLY reference details already spoken in the conversation history. They redirect, reframe, or weaponize what's already on the table — they never introduce new information.
 - No line should promise a future reveal ("there's something I need to tell you"). Either say the thing or don't.
-- Do not invent details beyond what the backstory provides.
-
 What each combination means:
 ${comboLines}
 
 Respect the approach and affect exactly.`;
 
+  // ── Build backstory block ───────────────────────────────────────────────
+  const backstoryLines: string[] = [];
+  backstoryLines.push(`${charA.name}'s surface detail: ${charA.surfaceSecret}`);
+  if (charA.coreSecret) backstoryLines.push(`${charA.name}'s deeper secret: ${charA.coreSecret}`);
+  backstoryLines.push(`${charB.name}'s surface detail: ${charB.surfaceSecret}`);
+  if (charB.coreSecret) backstoryLines.push(`${charB.name}'s deeper secret: ${charB.coreSecret}`);
+  const backstoryBlock = backstoryLines.join("\n");
+
   let turnPressure: string;
-  if (turnNumber <= 5) turnPressure = "The conversation is just beginning.";
-  else if (turnNumber <= 10) turnPressure = "The conversation is deepening.";
-  else if (turnNumber <= 15) turnPressure = "The conversation is reaching its climax.";
-  else turnPressure = "This may be the last exchange.";
+  if (endingTurnsLeft === 1) {
+    turnPressure = "THIS IS THE SECOND-TO-LAST LINE. Begin wrapping up — land the emotional arc, start bringing threads together.";
+  } else if (endingTurnsLeft === 0) {
+    turnPressure = "THIS IS THE FINAL LINE OF THE SCENE. Make it count — deliver the last word, the closing image, the thing that lingers.";
+  } else if (turnNumber <= 5) {
+    turnPressure = "The conversation is just beginning.";
+  } else if (turnNumber <= 10) {
+    turnPressure = "The conversation is deepening.";
+  } else if (turnNumber <= 15) {
+    turnPressure = "The conversation is reaching its climax.";
+  } else {
+    turnPressure = "This may be the last exchange.";
+  }
 
   const historyBlock =
     history.length > 0
@@ -158,7 +221,7 @@ Respect the approach and affect exactly.`;
 
   const user = `Scene: ${scene.narratedIntro}
 
-${scene.secretBackstory}
+${backstoryBlock}
 
 ${name} speaks next. This is exchange ${turnNumber} of roughly 20.
 ${turnPressure}${historyBlock}

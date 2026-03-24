@@ -1,16 +1,17 @@
 export type Approach = "approach" | "neutral" | "avoid";
 export type Affect = "happy" | "sad" | "angry" | "very_happy" | "very_sad" | "very_angry";
+export type AffectCategory = "happy" | "sad" | "angry";
 export type Character = "A" | "B";
 
 export interface CharacterInfo {
   name: string;
   voice: string;
-  secretDetail: string;
+  surfaceSecret: string;
+  coreSecret: string | null;
 }
 
 export interface SceneConfig {
   narratedIntro: string;
-  secretBackstory: string;
   characters: Record<Character, CharacterInfo>;
 }
 
@@ -20,7 +21,8 @@ export type Phase =
   | "narrating-intro"
   | "narrating"
   | "locked"
-  | "waiting";
+  | "waiting"
+  | "finished";
 
 export type Candidates = Record<Approach, Record<Affect, string>>;
 
@@ -38,6 +40,8 @@ export interface ConductorState {
   sceneConfig: SceneConfig | null;
   turnNumber: number;
   history: string[];
+  affectHistory: AffectCategory[];
+  coreSecretCategory: AffectCategory | null;
   audioBuffer: AudioBuffer | null;
   candidatesA: Candidates | null;
   candidatesB: Candidates | null;
@@ -57,4 +61,5 @@ export interface ConductorState {
   sessionId: string | null;
   lineSequence: number;
   lastCandidatesFetchMs: number | null;
+  endingTurnsLeft: number | null;
 }

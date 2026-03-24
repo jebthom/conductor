@@ -6,12 +6,13 @@ import type {
   SelectionState,
   Approach,
   Affect,
+  AffectCategory,
   Character,
   Candidates,
   Phase,
   SceneConfig,
 } from "./types";
-import { createScene } from "./scene";
+import { createScene, affectToCategory, getAffectWinner, assignCoreSecrets } from "./scene";
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 
@@ -21,8 +22,8 @@ type Action =
   | { type: "CANDIDATES_READY"; candidatesA: Candidates; candidatesB: Candidates; fetchMs: number }
   | { type: "NARRATION_ENDED" }
   | { type: "CHARACTER_SELECT"; character: Character }
-  | { type: "APPROACH_UPDATE"; approach: Approach }
-  | { type: "AFFECT_UPDATE"; affect: Affect }
+  | { type: "APPROACH_UPDATE"; approach: Approach | null }
+  | { type: "AFFECT_UPDATE"; affect: Affect | null }
   | { type: "INSTANT_APPROACH"; approach: Approach }
   | { type: "INSTANT_AFFECT"; affect: Affect }
   | { type: "LOCK_IN" }
@@ -31,7 +32,8 @@ type Action =
   | { type: "ENTER_WAITING" }
   | { type: "SET_PHASE"; phase: Phase }
   | { type: "NARRATION_STARTED"; startTime: number; duration: number }
-  | { type: "SESSION_STARTED"; sessionId: string };
+  | { type: "SESSION_STARTED"; sessionId: string }
+  | { type: "BEGIN_ENDING" };
 
 // ── Initial state ────────────────────────────────────────────────────────────
 
@@ -49,6 +51,8 @@ const initialState: ConductorState = {
   sceneConfig: null,
   turnNumber: 1,
   history: [],
+  affectHistory: [],
+  coreSecretCategory: null,
   audioBuffer: null,
   candidatesA: null,
   candidatesB: null,
@@ -68,6 +72,7 @@ const initialState: ConductorState = {
   sessionId: null,
   lineSequence: 1,
   lastCandidatesFetchMs: null,
+  endingTurnsLeft: null,
 };
 
 // ── Reducer ──────────────────────────────────────────────────────────────────
@@ -111,14 +116,23 @@ function reducer(state: ConductorState, action: Action): ConductorState {
         // Old audio finished while preparing next line — record end time, stay locked
         return { ...state, playbackEndedAt: Date.now(), playbackEndTime: null };
       }
+      if (state.endingTurnsLeft === 0) {
+        return { ...initialState };
+      }
       return { ...state, phase: "waiting", playbackEndTime: null, playbackEndedAt: Date.now() };
 
     case "CHARACTER_SELECT":
       return { ...state, activeCharacter: action.character };
 
     case "APPROACH_UPDATE": {
-      const now = Date.now();
       const prev = state.selection;
+      if (action.approach === null) {
+        return {
+          ...state,
+          selection: { ...prev, hoveredApproach: null, approachHeldSince: null, confirmedApproach: null },
+        };
+      }
+      const now = Date.now();
       let { hoveredApproach, approachHeldSince, confirmedApproach } = prev;
 
       if (action.approach !== hoveredApproach) {
@@ -136,8 +150,14 @@ function reducer(state: ConductorState, action: Action): ConductorState {
     }
 
     case "AFFECT_UPDATE": {
-      const now = Date.now();
       const prev = state.selection;
+      if (action.affect === null) {
+        return {
+          ...state,
+          selection: { ...prev, hoveredAffect: null, affectHeldSince: null, confirmedAffect: null },
+        };
+      }
+      const now = Date.now();
       let { hoveredAffect, affectHeldSince, confirmedAffect } = prev;
 
       if (action.affect !== hoveredAffect) {
@@ -185,15 +205,37 @@ function reducer(state: ConductorState, action: Action): ConductorState {
 
       const line = candidates[confirmedApproach][confirmedAffect];
       const charName = sceneConfig?.characters[activeCharacter]?.name ?? activeCharacter;
+
+      // Track affect trajectory and assign core secrets when pattern is clear
+      const newAffectHistory = [...state.affectHistory, affectToCategory(confirmedAffect)];
+      let newSceneConfig = sceneConfig;
+      let newCoreCategory = state.coreSecretCategory;
+
+      if (!newCoreCategory && newSceneConfig && newAffectHistory.length >= 4) {
+        const winner = getAffectWinner(newAffectHistory);
+        if (winner) {
+          newCoreCategory = winner;
+          newSceneConfig = assignCoreSecrets(newSceneConfig, winner);
+          console.log("[conductor] core secrets assigned — affect trajectory:", winner);
+        }
+      }
+
+      const newEndingTurnsLeft = state.endingTurnsLeft !== null
+        ? state.endingTurnsLeft - 1
+        : null;
+
       return {
         ...state,
         phase: "locked",
+        sceneConfig: newSceneConfig,
+        affectHistory: newAffectHistory,
+        coreSecretCategory: newCoreCategory,
+        endingTurnsLeft: newEndingTurnsLeft,
         pendingLine: line,
         pendingCharacter: activeCharacter,
         pendingApproach: confirmedApproach,
         pendingAffect: confirmedAffect,
         pendingAudio: null,
-        // Keep currentLine/speakingCharacter — caption shows what's playing
         history: [...state.history, `${charName}: ${line}`],
         turnNumber: state.turnNumber + 1,
         lineSequence: state.lineSequence + 1,
@@ -223,6 +265,11 @@ function reducer(state: ConductorState, action: Action): ConductorState {
 
     case "ENTER_WAITING":
       return { ...state, phase: "waiting" };
+
+    case "BEGIN_ENDING":
+      if (state.endingTurnsLeft !== null) return state; // already ending
+      console.log("[conductor] ending sequence triggered — 2 turns remaining");
+      return { ...state, endingTurnsLeft: 2 };
 
     default:
       return state;
@@ -277,12 +324,13 @@ export function useConductor() {
     scene: SceneConfig,
     history: string[],
     turnNumber: number,
-    character: Character
+    character: Character,
+    endingTurnsLeft?: number | null
   ): Promise<Candidates> {
     const res = await fetch("/api/generate-candidates", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scene, history, turnNumber, character }),
+      body: JSON.stringify({ scene, history, turnNumber, character, endingTurnsLeft }),
     });
     if (!res.ok) {
       const body = await res.text();
@@ -296,13 +344,14 @@ export function useConductor() {
   async function fetchAllCandidates(
     scene: SceneConfig,
     history: string[],
-    turnNumber: number
+    turnNumber: number,
+    endingTurnsLeft?: number | null
   ): Promise<{ candidatesA: Candidates; candidatesB: Candidates; fetchMs: number }> {
     console.log("[conductor] fetchCandidates start: both chars, history length", history.length, "turn", turnNumber);
     const t0 = performance.now();
     const [candidatesA, candidatesB] = await Promise.all([
-      fetchCandidatesForCharacter(scene, history, turnNumber, "A"),
-      fetchCandidatesForCharacter(scene, history, turnNumber, "B"),
+      fetchCandidatesForCharacter(scene, history, turnNumber, "A", endingTurnsLeft),
+      fetchCandidatesForCharacter(scene, history, turnNumber, "B", endingTurnsLeft),
     ]);
     const fetchMs = performance.now() - t0;
     console.log("[conductor] fetchCandidates done:", Math.round(fetchMs), "ms");
@@ -432,9 +481,12 @@ export function useConductor() {
         dispatch({ type: "TTS_READY", audioBuffer: audioBuf });
       });
 
-      fetchAllCandidates(state.sceneConfig, state.history, state.turnNumber).then(({ candidatesA, candidatesB, fetchMs }) => {
-        dispatch({ type: "CANDIDATES_READY", candidatesA, candidatesB, fetchMs });
-      });
+      // Skip candidate fetch if this is the final turn
+      if (state.endingTurnsLeft === null || state.endingTurnsLeft > 0) {
+        fetchAllCandidates(state.sceneConfig, state.history, state.turnNumber, state.endingTurnsLeft).then(({ candidatesA, candidatesB, fetchMs }) => {
+          dispatch({ type: "CANDIDATES_READY", candidatesA, candidatesB, fetchMs });
+        });
+      }
     }
 
     if (phase === "narrating" && state.audioBuffer) {
@@ -549,14 +601,14 @@ export function useConductor() {
   );
 
   const handleApproachUpdate = useCallback(
-    (approach: Approach) => {
+    (approach: Approach | null) => {
       dispatch({ type: "APPROACH_UPDATE", approach });
     },
     []
   );
 
   const handleAffectUpdate = useCallback(
-    (affect: Affect) => {
+    (affect: Affect | null) => {
       dispatch({ type: "AFFECT_UPDATE", affect });
     },
     []
@@ -576,5 +628,9 @@ export function useConductor() {
     []
   );
 
-  return { state, start, handleCharacterSelect, handleApproachUpdate, handleAffectUpdate, handleInstantApproach, handleInstantAffect };
+  const handleBeginEnding = useCallback(() => {
+    dispatch({ type: "BEGIN_ENDING" });
+  }, []);
+
+  return { state, start, handleCharacterSelect, handleApproachUpdate, handleAffectUpdate, handleInstantApproach, handleInstantAffect, handleBeginEnding };
 }
