@@ -399,7 +399,7 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
         const topBtnH = 70;
         const topBtnX = (canvas.width - topBtnW) / 2;
         const topBtnY = 0;
-        const HOLD_MS = 2000;
+        const HOLD_MS = 3000;
 
         const isIdle = phaseRef.current === "idle" || phaseRef.current === "finished";
         const endingActive = endingTurnsLeftRef.current !== null && endingTurnsLeftRef.current !== undefined;

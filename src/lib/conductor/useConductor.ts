@@ -14,6 +14,17 @@ import type {
 } from "./types";
 import { createScene, affectToCategory, getAffectWinner, assignCoreSecrets } from "./scene";
 
+// ── Affect → TTS emotion prompt mapping ─────────────────────────────────────
+
+const AFFECT_EMOTION: Record<Affect, string> = {
+  happy: "Speak with warmth and gentle happiness",
+  sad: "Speak with sadness and quiet regret",
+  angry: "Speak with sharp, controlled anger",
+  very_happy: "Speak with overwhelming joy and breathless excitement",
+  very_sad: "Speak with deep devastation, voice breaking with grief",
+  very_angry: "Speak with explosive fury and righteous rage",
+};
+
 // ── Actions ──────────────────────────────────────────────────────────────────
 
 type Action =
@@ -298,15 +309,17 @@ export function useConductor() {
   async function fetchAudio(
     text: string,
     voice?: string,
-    session?: { sessionId: string; sequence: number }
+    session?: { sessionId: string; sequence: number },
+    emotion?: string,
+    affect?: string
   ): Promise<{ audioBuf: AudioBuffer; ttsMs: number }> {
     const label = text.length > 40 ? text.slice(0, 40) + "…" : text;
-    console.log("[conductor] fetchAudio start:", label, voice ? `(${voice})` : "");
+    console.log("[conductor] fetchAudio start:", label, voice ? `(${voice})` : "", emotion ? `[${emotion}]` : "");
     const t0 = performance.now();
     const res = await fetch("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, voice, sessionId: session?.sessionId, sequence: session?.sequence }),
+      body: JSON.stringify({ text, voice, emotion, affect, sessionId: session?.sessionId, sequence: session?.sequence }),
     });
     if (!res.ok) {
       const body = await res.text();
@@ -429,7 +442,8 @@ export function useConductor() {
     if (phase === "init") {
       if (!state.sceneConfig) return;
       const session = state.sessionId ? { sessionId: state.sessionId, sequence: state.lineSequence } : undefined;
-      fetchAudio(state.sceneConfig.narratedIntro, undefined, session).then(({ audioBuf, ttsMs }) => {
+      const narratorVoice = state.sceneConfig.characters.A.voice;
+      fetchAudio(state.sceneConfig.narratedIntro, narratorVoice, session).then(({ audioBuf, ttsMs }) => {
         if (state.sessionId) {
           logSessionLine({
             sessionId: state.sessionId,
@@ -464,7 +478,8 @@ export function useConductor() {
       const { pendingLine, pendingApproach, pendingAffect, sessionId, lineSequence, lastCandidatesFetchMs } = state;
 
       // Fire TTS and candidate fetch independently
-      fetchAudio(pendingLine, voice, session).then(({ audioBuf, ttsMs }) => {
+      const emotion = pendingAffect ? AFFECT_EMOTION[pendingAffect] : undefined;
+      fetchAudio(pendingLine, voice, session, emotion, pendingAffect ?? undefined).then(({ audioBuf, ttsMs }) => {
         if (sessionId) {
           logSessionLine({
             sessionId,

@@ -5,13 +5,13 @@ import { getTTS } from "@/lib/providers";
 
 export async function POST(req: Request) {
   try {
-    const { text, voice, sessionId, sequence } = await req.json();
+    const { text, voice, emotion, affect, sessionId, sequence } = await req.json();
     if (!text) {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
     }
 
     const tts = getTTS();
-    const wavBuffer = await tts.speak(text, voice);
+    const wavBuffer = await tts.speak(text, voice, emotion, affect);
 
     // Save WAV to session folder if session is active
     if (sessionId && sequence != null) {
@@ -22,16 +22,22 @@ export async function POST(req: Request) {
       );
     }
 
+    // Detect content type from buffer header (mp3 starts with FF FB or ID3)
+    const isMP3 = (wavBuffer[0] === 0xFF && (wavBuffer[1] & 0xE0) === 0xE0) ||
+                  (wavBuffer[0] === 0x49 && wavBuffer[1] === 0x44 && wavBuffer[2] === 0x33);
+    const contentType = isMP3 ? "audio/mpeg" : "audio/wav";
+
     return new NextResponse(new Uint8Array(wavBuffer), {
       headers: {
-        "Content-Type": "audio/wav",
+        "Content-Type": contentType,
         "Content-Length": wavBuffer.length.toString(),
       },
     });
   } catch (error) {
-    console.error("TTS error:", error);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("TTS error:", msg, error);
     return NextResponse.json(
-      { error: "Failed to synthesize speech" },
+      { error: `Failed to synthesize speech: ${msg}` },
       { status: 500 }
     );
   }

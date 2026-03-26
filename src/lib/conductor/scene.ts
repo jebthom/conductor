@@ -1,4 +1,5 @@
 import type { Approach, Affect, AffectCategory, Character, SceneConfig } from "./types";
+import { getVoices } from "@/lib/providers";
 
 // ── Randomization pools ─────────────────────────────────────────────────────
 
@@ -116,8 +117,8 @@ export function createScene(): SceneConfig {
   return {
     narratedIntro,
     characters: {
-      A: { name: nameA, voice: "af_heart", surfaceSecret: pick(SURFACE_SECRETS_A), coreSecret: null },
-      B: { name: nameB, voice: "am_michael", surfaceSecret: pick(SURFACE_SECRETS_B), coreSecret: null },
+      A: { name: nameA, voice: getVoices().female, surfaceSecret: pick(SURFACE_SECRETS_A), coreSecret: null },
+      B: { name: nameB, voice: getVoices().male, surfaceSecret: pick(SURFACE_SECRETS_B), coreSecret: null },
     },
   };
 }
