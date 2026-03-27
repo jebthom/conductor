@@ -333,27 +333,6 @@ export function useConductor() {
     return { audioBuf, ttsMs };
   }
 
-  async function fetchCandidatesForCharacter(
-    scene: SceneConfig,
-    history: string[],
-    turnNumber: number,
-    character: Character,
-    endingTurnsLeft?: number | null
-  ): Promise<Candidates> {
-    const res = await fetch("/api/generate-candidates", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scene, history, turnNumber, character, endingTurnsLeft }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      console.error(`[conductor] fetchCandidates ${character} FAILED:`, res.status, body);
-      throw new Error(`Candidate generation failed for ${character}`);
-    }
-    const data = await res.json();
-    return data.candidates as Candidates;
-  }
-
   async function fetchAllCandidates(
     scene: SceneConfig,
     history: string[],
@@ -362,13 +341,20 @@ export function useConductor() {
   ): Promise<{ candidatesA: Candidates; candidatesB: Candidates; fetchMs: number }> {
     console.log("[conductor] fetchCandidates start: both chars, history length", history.length, "turn", turnNumber);
     const t0 = performance.now();
-    const [candidatesA, candidatesB] = await Promise.all([
-      fetchCandidatesForCharacter(scene, history, turnNumber, "A", endingTurnsLeft),
-      fetchCandidatesForCharacter(scene, history, turnNumber, "B", endingTurnsLeft),
-    ]);
+    const res = await fetch("/api/generate-candidates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scene, history, turnNumber, endingTurnsLeft }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error("[conductor] fetchCandidates FAILED:", res.status, body);
+      throw new Error("Candidate generation failed");
+    }
+    const { candidatesA, candidatesB } = await res.json();
     const fetchMs = performance.now() - t0;
     console.log("[conductor] fetchCandidates done:", Math.round(fetchMs), "ms");
-    return { candidatesA, candidatesB, fetchMs };
+    return { candidatesA: candidatesA as Candidates, candidatesB: candidatesB as Candidates, fetchMs };
   }
 
   function logSessionLine(params: {

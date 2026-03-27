@@ -18,7 +18,7 @@ const TTS_CONFIGS = {
   // alternative male: DwwuoY7Uz8AP8zrY5TAo
   elevenlabs: {
     create: () => new ElevenLabsProvider(),
-    voices: { female: "kXsOSDWolD7e9l1Z0sbH", male: "DwwuoY7Uz8AP8zrY5TAo" },
+    voices: { female: "DODLEQrClDo8wCz460ld", male: "DwwuoY7Uz8AP8zrY5TAo" },
   },
 } as const;
 

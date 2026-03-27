@@ -1,25 +1,30 @@
 import { NextResponse } from "next/server";
 import { buildCandidatePrompt } from "@/lib/conductor/scene";
 import { AnthropicProvider } from "@/lib/providers/llm";
-import type { Character, SceneConfig } from "@/lib/conductor/types";
+import type { SceneConfig } from "@/lib/conductor/types";
 
 export async function POST(req: Request) {
   try {
-    const { scene, history, turnNumber, character, endingTurnsLeft } = (await req.json()) as {
+    const { scene, history, turnNumber, endingTurnsLeft } = (await req.json()) as {
       scene: SceneConfig;
       history: string[];
       turnNumber: number;
-      character: Character;
       endingTurnsLeft?: number | null;
     };
 
-    // Fresh provider per request to avoid shared-client serialization
+    // Fan out both character calls in parallel within a single request
+    // (two separate browser requests get serialized by Next.js single-threaded worker)
     const llm = new AnthropicProvider();
-    const candidates = await llm.generateCandidates(
-      buildCandidatePrompt({ scene, history, character, turnNumber, endingTurnsLeft })
-    );
+    const [candidatesA, candidatesB] = await Promise.all([
+      llm.generateCandidates(
+        buildCandidatePrompt({ scene, history, character: "A", turnNumber, endingTurnsLeft })
+      ),
+      llm.generateCandidates(
+        buildCandidatePrompt({ scene, history, character: "B", turnNumber, endingTurnsLeft })
+      ),
+    ]);
 
-    return NextResponse.json({ candidates });
+    return NextResponse.json({ candidatesA, candidatesB });
   } catch (error) {
     console.error("Candidate generation error:", error);
     return NextResponse.json(
