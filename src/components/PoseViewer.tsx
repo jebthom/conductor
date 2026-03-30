@@ -559,19 +559,19 @@ export default function PoseViewer({ onCharacterSelect, onApproachHover, onAffec
               color: isMiddleHand ? "rgba(220, 80, 60, 0.9)" : "rgba(120, 200, 200, 0.7)",
             });
 
-            if (isMiddleHand) {
-              const px = Math.round(lm.x * canvas.width);
-              const py = Math.round(lm.y * canvas.height);
-              const tx = lm.x * canvas.width;
-              const ty = lm.y * canvas.height;
-              ctx.save();
-              ctx.translate(tx, ty);
-              ctx.scale(-1, 1);
-              ctx.font = `16px ${SERIF}`;
-              ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-              ctx.fillText(`(${px}, ${py})`, 14, 4);
-              ctx.restore();
-            }
+            // if (isMiddleHand) {
+            //   const px = Math.round(lm.x * canvas.width);
+            //   const py = Math.round(lm.y * canvas.height);
+            //   const tx = lm.x * canvas.width;
+            //   const ty = lm.y * canvas.height;
+            //   ctx.save();
+            //   ctx.translate(tx, ty);
+            //   ctx.scale(-1, 1);
+            //   ctx.font = `16px ${SERIF}`;
+            //   ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+            //   ctx.fillText(`(${px}, ${py})`, 14, 4);
+            //   ctx.restore();
+            // }
           });
         }
 

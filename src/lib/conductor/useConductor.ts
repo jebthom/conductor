@@ -14,6 +14,28 @@ import type {
 } from "./types";
 import { createScene, affectToCategory, getAffectWinner, assignCoreSecrets } from "./scene";
 
+// ── Retry helper ─────────────────────────────────────────────────────────────
+
+async function fetchWithRetry(
+  input: RequestInfo,
+  init?: RequestInit,
+  retries = 3,
+  delayMs = 1000
+): Promise<Response> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(input, init);
+      if (res.ok || attempt === retries) return res;
+      console.warn(`[conductor] fetch attempt ${attempt}/${retries} got ${res.status}, retrying...`);
+    } catch (err) {
+      if (attempt === retries) throw err;
+      console.warn(`[conductor] fetch attempt ${attempt}/${retries} failed:`, err, "retrying...");
+    }
+    await new Promise((r) => setTimeout(r, delayMs * attempt));
+  }
+  throw new Error("fetchWithRetry: unreachable");
+}
+
 // ── Affect → TTS emotion prompt mapping ─────────────────────────────────────
 
 const AFFECT_EMOTION: Record<Affect, string> = {
@@ -316,7 +338,7 @@ export function useConductor() {
     const label = text.length > 40 ? text.slice(0, 40) + "…" : text;
     console.log("[conductor] fetchAudio start:", label, voice ? `(${voice})` : "", emotion ? `[${emotion}]` : "");
     const t0 = performance.now();
-    const res = await fetch("/api/speak", {
+    const res = await fetchWithRetry("/api/speak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, voice, emotion, affect, sessionId: session?.sessionId, sequence: session?.sequence }),
@@ -341,7 +363,7 @@ export function useConductor() {
   ): Promise<{ candidatesA: Candidates; candidatesB: Candidates; fetchMs: number }> {
     console.log("[conductor] fetchCandidates start: both chars, history length", history.length, "turn", turnNumber);
     const t0 = performance.now();
-    const res = await fetch("/api/generate-candidates", {
+    const res = await fetchWithRetry("/api/generate-candidates", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scene, history, turnNumber, endingTurnsLeft }),
